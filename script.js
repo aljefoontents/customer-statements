@@ -1597,6 +1597,18 @@ function transactionFormHTML(
     customerId
 ) {
 
+    const customerOptions =
+        appData.customers
+            .map(customer => `
+                <option
+                    value="${escapeHTML(customer.id)}"
+                    ${customer.id === customerId ? "selected" : ""}
+                >
+                    ${escapeHTML(customer.name)}
+                </option>
+            `)
+            .join("");
+
     return `
 
         <form id="transactionForm">
@@ -1609,39 +1621,18 @@ function transactionFormHTML(
                 </label>
 
                 <select
-    class="filter-select"
-    id="transactionTypeFilter"
->
+                    class="form-control"
+                    id="transactionCustomer"
+                    required
+                >
 
-    <option value="all">
-        All Types
-    </option>
+                    <option value="">
+                        Select Customer
+                    </option>
 
-    <option value="sale">
-        Credit Sales
-    </option>
+                    ${customerOptions}
 
-    <option value="payment_received">
-        Payments Received
-    </option>
-
-    <option value="purchase">
-        Credit Purchases
-    </option>
-
-    <option value="payment_made">
-        Payments Made
-    </option>
-
-    <option value="debit">
-        Debit Adjustments
-    </option>
-
-    <option value="credit">
-        Credit Adjustments
-    </option>
-
-</select>
+                </select>
 
             </div>
 
@@ -1655,41 +1646,43 @@ function transactionFormHTML(
 
                 <div class="transaction-types">
 
-    ${transactionTypeButton(
-        "sale",
-        "↑",
-        "Credit Sale",
-        "Customer owes Al Jefoon"
-    )}
+                    ${transactionTypeButton(
+                        "sale",
+                        "↑",
+                        "Credit Sale",
+                        "Customer owes Al Jefoon"
+                    )}
 
-    ${transactionTypeButton(
-        "payment_received",
-        "↓",
-        "Payment Received",
-        "Payment received from customer"
-    )}
+                    ${transactionTypeButton(
+                        "payment_received",
+                        "↓",
+                        "Payment Received",
+                        "Payment received from customer"
+                    )}
 
-    ${transactionTypeButton(
-        "purchase",
-        "▤",
-        "Credit Purchase",
-        "Al Jefoon owes supplier"
-    )}
+                    ${transactionTypeButton(
+                        "purchase",
+                        "▤",
+                        "Credit Purchase",
+                        "Al Jefoon owes supplier"
+                    )}
 
-    ${transactionTypeButton(
-        "payment_made",
-        "↓",
-        "Payment Made",
-        "Payment made to supplier"
-    )}
+                    ${transactionTypeButton(
+                        "payment_made",
+                        "↓",
+                        "Payment Made",
+                        "Payment made to supplier"
+                    )}
 
-</div>
+                </div>
+
 
                 <input
-    type="hidden"
-    id="transactionType"
-    value="sale"
->
+                    type="hidden"
+                    id="transactionType"
+                    value="sale"
+                >
+
             </div>
 
 
@@ -1973,7 +1966,6 @@ function transactionFormHTML(
         </form>
     `;
 }
-
 
 /* =========================================================
    TRANSACTION TYPE BUTTON
