@@ -168,6 +168,8 @@ textarea {
 
 .brand-name {
 
+   text-align: center;
+
     color: var(--gold);
 
     font-size: 25px;
