@@ -125,15 +125,30 @@ function saveData() {
 
     try {
 
-        const serialized =
-            JSON.stringify(appData);
-
         localStorage.setItem(
             STORAGE_KEY,
-            serialized
+            JSON.stringify(appData)
         );
 
         updateAlertBadges();
+
+        return true;
+
+    } catch (error) {
+
+        console.error(
+            "Could not save application data:",
+            error
+        );
+
+        showToast(
+            "Unable to save. Browser storage may be blocked or full.",
+            "!"
+        );
+
+        return false;
+    }
+}
 
         return true;
 
