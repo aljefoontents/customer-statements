@@ -434,7 +434,7 @@ function getViewConfig(view) {
 
         dashboard: {
             title: "Dashboard",
-            subtitle: "Customer accounts overview"
+            subtitle: "Customer Accounts Overview"
         },
 
         customers: {
