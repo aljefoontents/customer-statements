@@ -2568,12 +2568,12 @@ function renderCustomerStatement(
         );
 
 
-    const purchases =
+    const receivableActivity =
         transactions
             .filter(
                 t =>
-                    t.type === "purchase" ||
-                    t.type === "debit"
+                    t.type === "sale" ||
+                    t.type === "payment_received"
             )
             .reduce(
                 (sum, t) =>
@@ -2582,11 +2582,25 @@ function renderCustomerStatement(
             );
 
 
-    const payments =
+    const payableActivity =
         transactions
             .filter(
                 t =>
-                    t.type === "payment" ||
+                    t.type === "purchase" ||
+                    t.type === "payment_made"
+            )
+            .reduce(
+                (sum, t) =>
+                    sum + Number(t.amount || 0),
+                0
+            );
+
+
+    const adjustments =
+        transactions
+            .filter(
+                t =>
+                    t.type === "debit" ||
                     t.type === "credit"
             )
             .reduce(
@@ -2594,6 +2608,20 @@ function renderCustomerStatement(
                     sum + Number(t.amount || 0),
                 0
             );
+
+
+    const totalActivity =
+        receivableActivity +
+        payableActivity +
+        adjustments;
+
+
+    const balanceLabel =
+        balance > 0
+            ? "RECEIVABLE"
+            : balance < 0
+                ? "PAYABLE"
+                : "SETTLED";
 
 
     appContent.innerHTML = `
@@ -2691,7 +2719,11 @@ function renderCustomerStatement(
 
                     <div class="balance-box-value">
                         ${formatMoney(
-                            customer.openingBalance || 0
+                            Math.abs(
+                                Number(
+                                    customer.openingBalance || 0
+                                )
+                            )
                         )}
                     </div>
 
@@ -2706,7 +2738,7 @@ function renderCustomerStatement(
 
                     <div class="balance-box-value">
                         ${formatMoney(
-                            purchases + payments
+                            totalActivity
                         )}
                     </div>
 
@@ -2716,7 +2748,7 @@ function renderCustomerStatement(
                 <div class="balance-box">
 
                     <div class="balance-box-label">
-                        Current Balance
+                        ${balanceLabel}
                     </div>
 
                     <div
@@ -2793,7 +2825,6 @@ function renderCustomerStatement(
                 )
         );
 }
-
 
 /* =========================================================
    STATEMENT TABLE
