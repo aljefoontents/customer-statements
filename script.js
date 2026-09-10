@@ -2258,11 +2258,12 @@ function saveTransaction(event) {
         description,
 
         paymentMethod:
-            type === "payment"
-                ? document.getElementById(
-                    "paymentMethod"
-                ).value
-                : "",
+    type === "payment_received" ||
+    type === "payment_made"
+        ? document.getElementById(
+            "paymentMethod"
+        ).value
+        : "",
 
         notes:
             document.getElementById(
