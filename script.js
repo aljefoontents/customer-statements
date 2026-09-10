@@ -874,39 +874,87 @@ function getCustomerBalance(customerId) {
             const amount =
                 Number(transaction.amount || 0);
 
+
+            /* =========================================
+               RECEIVABLE
+            ========================================= */
+
             if (
+                transaction.type ===
+                "sale"
+            ) {
+
+                // Customer owes Al Jefoon
+                balance += amount;
+
+            }
+
+
+            else if (
+                transaction.type ===
+                "payment_received"
+            ) {
+
+                // Customer paid Al Jefoon
+                balance -= amount;
+
+            }
+
+
+            /* =========================================
+               PAYABLE
+            ========================================= */
+
+            else if (
                 transaction.type ===
                 "purchase"
             ) {
 
-                balance += amount;
-
-            } else if (
-                transaction.type ===
-                "payment"
-            ) {
-
+                // Al Jefoon owes supplier
                 balance -= amount;
 
-            } else if (
+            }
+
+
+            else if (
+                transaction.type ===
+                "payment_made"
+            ) {
+
+                // Al Jefoon paid supplier
+                balance += amount;
+
+            }
+
+
+            /* =========================================
+               ADJUSTMENTS
+            ========================================= */
+
+            else if (
                 transaction.type ===
                 "debit"
             ) {
 
                 balance += amount;
 
-            } else if (
+            }
+
+
+            else if (
                 transaction.type ===
                 "credit"
             ) {
 
                 balance -= amount;
+
             }
+
         });
+
 
     return balance;
 }
-
 
 /* =========================================================
    CUSTOMER BALANCE LIST
