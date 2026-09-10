@@ -917,82 +917,73 @@ function customerBalanceListHTML(items) {
     }
 
     return `
-
         <div style="padding:5px 0;">
+            ${items.map(item => {
+                const balance = item.balance;
 
-            ${items.map(
-                item => {
+                const balanceLabel =
+                    balance > 0
+                        ? "RECEIVABLE"
+                        : balance < 0
+                            ? "PAYABLE"
+                            : "SETTLED";
 
-                    const balance =
-                        item.balance;
-
-                    return `
-
-                        <button
-                            class="customer-balance-row"
-                            data-customer-id="${item.customer.id}"
-                            style="
-                                width:100%;
-                                border:0;
-                                border-bottom:1px solid var(--border);
-                                background:transparent;
-                                color:var(--text);
-                                padding:13px 18px;
-                                display:flex;
-                                align-items:center;
-                                justify-content:space-between;
-                                gap:10px;
-                                text-align:left;
-                            "
-                        >
-
-                            <span>
-
-                                <strong>
-                                    ${escapeHTML(
-                                        item.customer.name
-                                    )}
-                                </strong>
-
-                                <small
-                                    style="
-                                        display:block;
-                                        margin-top:3px;
-                                        color:var(--muted);
-                                    "
-                                >
-                                    ${escapeHTML(
-                                        item.customer.phone ||
-                                        "No phone"
-                                    )}
-                                </small>
-
-                            </span>
-
-                            <span
-                                class="amount ${
-                                    balance > 0
-                                        ? "positive"
-                                        : balance < 0
-                                            ? "negative"
-                                            : "neutral"
-                                }"
+                return `
+                    <button
+                        class="customer-balance-row"
+                        data-customer-id="${item.customer.id}"
+                        style="
+                            width:100%;
+                            border:0;
+                            border-bottom:1px solid var(--border);
+                            background:transparent;
+                            color:var(--text);
+                            padding:13px 18px;
+                            display:flex;
+                            align-items:center;
+                            justify-content:space-between;
+                            gap:10px;
+                            text-align:left;
+                        "
+                    >
+                        <span>
+                            <strong>
+                                ${escapeHTML(item.customer.name)}
+                            </strong>
+                            <small
+                                style="
+                                    display:block;
+                                    margin-top:3px;
+                                    color:var(--muted);
+                                "
                             >
-                                ${formatMoney(
-                                    Math.abs(balance)
+                                ${escapeHTML(
+                                    item.customer.phone ||
+                                    "No phone"
                                 )}
-                            </span>
+                            </small>
+                        </span>
 
-                        </button>
-                    `;
-                }
-            ).join("")}
-
+                        <span
+                            class="amount ${
+                                balance > 0
+                                    ? "positive"
+                                    : balance < 0
+                                        ? "negative"
+                                        : "neutral"
+                            }"
+                        >
+                            ${balanceLabel}
+                            ${formatMoney(
+                                Math.abs(balance)
+                            )}
+                        </span>
+                    </button>
+                `;
+            }).join("")}
         </div>
     `;
-
 }
-
 
 /* =========================================================
    CUSTOMER BALANCE CLICK
