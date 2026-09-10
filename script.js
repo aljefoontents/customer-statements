@@ -1669,42 +1669,41 @@ function transactionFormHTML(
 
                 <div class="transaction-types">
 
-                    ${transactionTypeButton(
-                        "purchase",
-                        "▤",
-                        "Credit Purchase",
-                        "Amount added to account"
-                    )}
+    ${transactionTypeButton(
+        "sale",
+        "↑",
+        "Credit Sale",
+        "Customer owes Al Jefoon"
+    )}
 
-                    ${transactionTypeButton(
-                        "payment",
-                        "↓",
-                        "Payment",
-                        "Amount paid / received"
-                    )}
+    ${transactionTypeButton(
+        "payment_received",
+        "↓",
+        "Payment Received",
+        "Payment received from customer"
+    )}
 
-                    ${transactionTypeButton(
-                        "debit",
-                        "+",
-                        "Debit Adjustment",
-                        "Increase balance"
-                    )}
+    ${transactionTypeButton(
+        "purchase",
+        "▤",
+        "Credit Purchase",
+        "Al Jefoon owes supplier"
+    )}
 
-                    ${transactionTypeButton(
-                        "credit",
-                        "−",
-                        "Credit Adjustment",
-                        "Reduce balance"
-                    )}
+    ${transactionTypeButton(
+        "payment_made",
+        "↓",
+        "Payment Made",
+        "Payment made to supplier"
+    )}
 
-                </div>
+</div>
 
                 <input
-                    type="hidden"
-                    id="transactionType"
-                    value="purchase"
-                >
-
+    type="hidden"
+    id="transactionType"
+    value="sale"
+>
             </div>
 
 
