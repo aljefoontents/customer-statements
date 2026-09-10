@@ -4845,11 +4845,20 @@ function saveTransaction(event) {
         null;
 
 
-    showToast(
-        wasEditing
-            ? "Transaction updated successfully."
-            : "Transaction saved successfully."
-    );
+   const edited =
+    Boolean(editingTransactionId);
+
+saveData();
+
+closeModal();
+
+editingTransactionId = null;
+
+showToast(
+    edited
+        ? "Transaction updated successfully."
+        : "Transaction saved successfully."
+);
 
 
     if (selectedCustomerId) {
