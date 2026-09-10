@@ -2260,12 +2260,12 @@ function saveTransaction(event) {
         description,
 
         paymentMethod:
-    type === "payment_received" ||
-    type === "payment_made"
-        ? document.getElementById(
-            "paymentMethod"
-        ).value
-        : "",
+            type === "payment_received" ||
+            type === "payment_made"
+                ? document.getElementById(
+                    "paymentMethod"
+                ).value
+                : "",
 
         notes:
             document.getElementById(
@@ -2281,6 +2281,118 @@ function saveTransaction(event) {
     appData.transactions.push(
         transaction
     );
+
+
+    /* -----------------------------------------------------
+       CHEQUE
+    ----------------------------------------------------- */
+
+    if (
+        (
+            type === "payment_received" ||
+            type === "payment_made"
+        ) &&
+        transaction.paymentMethod ===
+            "Cheque"
+    ) {
+
+        const chequeNumber =
+            document.getElementById(
+                "chequeNumber"
+            ).value
+            .trim();
+
+
+        if (!chequeNumber) {
+
+            showToast(
+                "Please enter the cheque number.",
+                "!"
+            );
+
+            appData.transactions.pop();
+
+            return;
+        }
+
+
+        const cheque = {
+
+            id:
+                makeId("cheque"),
+
+            transactionId:
+                transaction.id,
+
+            customerId,
+
+            amount,
+
+            chequeNumber,
+
+            bank:
+                document.getElementById(
+                    "chequeBank"
+                ).value
+                .trim(),
+
+            chequeDate:
+                document.getElementById(
+                    "chequeDate"
+                ).value,
+
+            clearanceDate:
+                document.getElementById(
+                    "chequeClearanceDate"
+                ).value,
+
+            drawer:
+                document.getElementById(
+                    "chequeDrawer"
+                ).value
+                .trim(),
+
+            status:
+                document.getElementById(
+                    "chequeStatus"
+                ).value,
+
+            createdAt:
+                new Date().toISOString()
+        };
+
+
+        appData.cheques.push(
+            cheque
+        );
+    }
+
+
+    saveData();
+
+    closeModal();
+
+    showToast(
+        "Transaction saved successfully."
+    );
+
+
+    if (
+        currentView === "customer" &&
+        selectedCustomerId === customerId
+    ) {
+
+        renderCustomerStatement(
+            customerId
+        );
+
+    } else {
+
+        renderView(
+            currentView
+        );
+    }
+}
 
 
     /* -----------------------------------------------------
