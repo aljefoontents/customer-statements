@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    >
+
+    <meta name="theme-color" content="#080808">
+
+    <title>Al Jefoon Tents — Customer Statements</title>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<!-- =====================================================
+     MOBILE OVERLAY
+===================================================== -->
+
+<div id="mobileOverlay" class="mobile-overlay"></div>
+
+
+<!-- =====================================================
+     SIDEBAR
+===================================================== -->
+
+<aside id="sidebar" class="sidebar">
+
+    <div class="brand">
+
+        <div class="brand-name">
+            Al Jefoon Tents
+        </div>
+
+        <div class="brand-subtitle">
+            Customer Statements
+        </div>
+
+    </div>
+
+
+    <nav class="sidebar-nav">
+
+        <button class="nav-item active" data-view="dashboard">
+            <span class="nav-icon">▦</span>
+            <span>Dashboard</span>
+        </button>
+
+        <button class="nav-item" data-view="customers">
+            <span class="nav-icon">♙</span>
+            <span>Customers</span>
+        </button>
+
+        <button class="nav-item" data-view="statements">
+            <span class="nav-icon">▤</span>
+            <span>Statements</span>
+        </button>
+
+        <button class="nav-item" data-view="transactions">
+            <span class="nav-icon">↔</span>
+            <span>Transactions</span>
+        </button>
+
+        <button class="nav-item" data-view="cheques">
+            <span class="nav-icon">▭</span>
+            <span>Cheque Register</span>
+            <span id="chequeAlertBadge" class="nav-badge hidden">0</span>
+        </button>
+
+        <button class="nav-item" data-view="print">
+            <span class="nav-icon">⎙</span>
+            <span>Print Statements</span>
+        </button>
+
+        <button class="nav-item" data-view="reports">
+            <span class="nav-icon">▥</span>
+            <span>Reports</span>
+        </button>
+
+        <button class="nav-item" data-view="backup">
+            <span class="nav-icon">⇩</span>
+            <span>Backup & Sync</span>
+        </button>
+
+        <button class="nav-item" data-view="settings">
+            <span class="nav-icon">⚙</span>
+            <span>Settings</span>
+        </button>
+
+    </nav>
+
+
+    <div class="sidebar-bottom">
+
+        <button id="themeToggle" class="theme-toggle">
+            <span id="themeIcon">☾</span>
+            <span id="themeText">Dark Mode</span>
+        </button>
+
+    </div>
+
+</aside>
+
+
+<!-- =====================================================
+     MAIN AREA
+===================================================== -->
+
+<main class="main">
+
+    <!-- TOP BAR -->
+
+    <header class="topbar">
+
+        <button id="mobileMenuButton" class="mobile-menu-button">
+            ☰
+        </button>
+
+        <div class="topbar-title">
+
+            <div id="pageTitle">
+                Dashboard
+            </div>
+
+            <div id="pageSubtitle" class="page-subtitle">
+                Customer accounts overview
+            </div>
+
+        </div>
+
+
+        <div class="topbar-actions">
+
+            <button
+                id="notificationButton"
+                class="icon-button"
+                title="Cheque alerts"
+            >
+                🔔
+                <span id="notificationBadge" class="notification-badge hidden">
+                    0
+                </span>
+            </button>
+
+            <button
+                id="quickAddButton"
+                class="primary-button"
+            >
+                + Add Transaction
+            </button>
+
+        </div>
+
+    </header>
+
+
+    <!-- CONTENT -->
+
+    <section id="appContent" class="content">
+
+        <!-- JavaScript renders the current page here -->
+
+    </section>
+
+</main>
+
+
+<!-- =====================================================
+     MODAL
+===================================================== -->
+
+<div id="modalOverlay" class="modal-overlay hidden">
+
+    <div id="modal" class="modal">
+
+        <div class="modal-header">
+
+            <div>
+
+                <h2 id="modalTitle">
+                    Add
+                </h2>
+
+                <div id="modalSubtitle" class="modal-subtitle"></div>
+
+            </div>
+
+            <button
+                id="modalClose"
+                class="modal-close"
+                aria-label="Close"
+            >
+                ×
+            </button>
+
+        </div>
+
+        <div id="modalBody" class="modal-body"></div>
+
+    </div>
+
+</div>
+
+
+<!-- =====================================================
+     TOAST
+===================================================== -->
+
+<div id="toast" class="toast">
+
+    <span id="toastIcon">✓</span>
+
+    <span id="toastMessage">
+        Saved
+    </span>
+
+</div>
+
+
+<!-- =====================================================
+     JAVASCRIPT
+===================================================== -->
+
+<script src="script.js"></script>
+
+</body>
+</html>
