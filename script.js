@@ -2936,20 +2936,100 @@ function statementTableHTML(
                 );
 
 
+            const isReceivable =
+                transaction.type === "sale";
+
+
+            const isPaymentReceived =
+                transaction.type ===
+                "payment_received";
+
+
+            const isPayable =
+                transaction.type === "purchase";
+
+
+            const isPaymentMade =
+                transaction.type ===
+                "payment_made";
+
+
             const isDebit =
-                transaction.type ===
-                    "purchase" ||
-                transaction.type ===
-                    "debit";
+                transaction.type === "debit";
 
 
-            if (isDebit) {
+            const isCredit =
+                transaction.type === "credit";
+
+
+            /* -------------------------------------------------
+               RUNNING BALANCE
+            ------------------------------------------------- */
+
+            if (isReceivable) {
 
                 runningBalance += amount;
 
-            } else {
+            } else if (isPaymentReceived) {
 
                 runningBalance -= amount;
+
+            } else if (isPayable) {
+
+                runningBalance -= amount;
+
+            } else if (isPaymentMade) {
+
+                runningBalance += amount;
+
+            } else if (isDebit) {
+
+                runningBalance += amount;
+
+            } else if (isCredit) {
+
+                runningBalance -= amount;
+            }
+
+
+            const debit =
+                isReceivable ||
+                isPaymentMade ||
+                isDebit;
+
+
+            const credit =
+                isPaymentReceived ||
+                isPayable ||
+                isCredit;
+
+
+            let entryLabel = "Adjustment";
+
+
+            if (isReceivable) {
+
+                entryLabel = "Receivable";
+
+            } else if (isPaymentReceived) {
+
+                entryLabel = "Payment Received";
+
+            } else if (isPayable) {
+
+                entryLabel = "Payable";
+
+            } else if (isPaymentMade) {
+
+                entryLabel = "Payment Made";
+
+            } else if (isDebit) {
+
+                entryLabel = "Debit";
+
+            } else if (isCredit) {
+
+                entryLabel = "Credit";
             }
 
 
@@ -2992,6 +3072,7 @@ function statementTableHTML(
                     </td>
 
                     <td>
+
                         ${
                             transaction.paymentMethod
                                 ? `
@@ -3003,20 +3084,17 @@ function statementTableHTML(
                                 `
                                 : `
                                     <span class="badge badge-gold">
-                                        ${
-                                            isDebit
-                                                ? "Purchase"
-                                                : "Adjustment"
-                                        }
+                                        ${entryLabel}
                                     </span>
                                 `
                         }
+
                     </td>
 
                     <td>
 
                         ${
-                            isDebit
+                            debit
                                 ? `
                                     <span class="amount positive">
                                         ${formatMoney(amount)}
@@ -3030,7 +3108,7 @@ function statementTableHTML(
                     <td>
 
                         ${
-                            !isDebit
+                            credit
                                 ? `
                                     <span class="amount negative">
                                         ${formatMoney(amount)}
@@ -3068,7 +3146,6 @@ function statementTableHTML(
 
     return rows;
 }
-
 
 /* =========================================================
    TRANSACTIONS
