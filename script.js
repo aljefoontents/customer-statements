@@ -3206,10 +3206,13 @@ function renderTransactions() {
                     Credit Purchases
                 </option>
 
-                <option value="payment">
-                    Payments
-                </option>
+                <option value="payment_received">
+    Payments Received
+</option>
 
+<option value="payment_made">
+    Payments Made
+</option>
                 <option value="debit">
                     Debit Adjustments
                 </option>
