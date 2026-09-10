@@ -1131,24 +1131,24 @@ function customersHTML(customers) {
                         </div>
 
                         ${
-                            balance > 0
-                                ? `
-                                    <span class="badge badge-danger">
-                                        Outstanding
-                                    </span>
-                                `
-                                : balance < 0
-                                    ? `
-                                        <span class="badge badge-success">
-                                            Credit
-                                        </span>
-                                    `
-                                    : `
-                                        <span class="badge badge-neutral">
-                                            Settled
-                                        </span>
-                                    `
-                        }
+    balance > 0
+        ? `
+            <span class="badge badge-danger">
+                RECEIVABLE
+            </span>
+        `
+        : balance < 0
+            ? `
+                <span class="badge badge-success">
+                    PAYABLE
+                </span>
+            `
+            : `
+                <span class="badge badge-neutral">
+                    SETTLED
+                </span>
+            `
+}
 
                     </div>
 
