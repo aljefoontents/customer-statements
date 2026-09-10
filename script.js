@@ -3419,11 +3419,17 @@ function transactionTypeBadge(type) {
 
     const labels = {
 
+        sale:
+            ["Credit Sale", "badge-success"],
+
+        payment_received:
+            ["Payment Received", "badge-success"],
+
         purchase:
             ["Credit Purchase", "badge-danger"],
 
-        payment:
-            ["Payment", "badge-success"],
+        payment_made:
+            ["Payment Made", "badge-danger"],
 
         debit:
             ["Debit", "badge-warning"],
@@ -3432,20 +3438,16 @@ function transactionTypeBadge(type) {
             ["Credit", "badge-success"]
     };
 
-
     const item =
         labels[type] ||
         ["Other", "badge-neutral"];
 
-
     return `
-
         <span class="badge ${item[1]}">
             ${item[0]}
         </span>
     `;
 }
-
 
 /* =========================================================
    CHEQUE REGISTER
