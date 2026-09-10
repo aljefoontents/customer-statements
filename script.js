@@ -5212,14 +5212,12 @@ function renderReports() {
                         );
 
 
-                    const purchases =
+                    const creditSales =
                         transactions
                             .filter(
                                 t =>
                                     t.type ===
-                                        "purchase" ||
-                                    t.type ===
-                                        "debit"
+                                    "sale"
                             )
                             .reduce(
                                 (sum, t) =>
@@ -5231,14 +5229,46 @@ function renderReports() {
                             );
 
 
-                    const payments =
+                    const paymentsReceived =
                         transactions
                             .filter(
                                 t =>
                                     t.type ===
-                                        "payment" ||
+                                    "payment_received"
+                            )
+                            .reduce(
+                                (sum, t) =>
+                                    sum +
+                                    Number(
+                                        t.amount || 0
+                                    ),
+                                0
+                            );
+
+
+                    const creditPurchases =
+                        transactions
+                            .filter(
+                                t =>
                                     t.type ===
-                                        "credit"
+                                    "purchase"
+                            )
+                            .reduce(
+                                (sum, t) =>
+                                    sum +
+                                    Number(
+                                        t.amount || 0
+                                    ),
+                                0
+                            );
+
+
+                    const paymentsMade =
+                        transactions
+                            .filter(
+                                t =>
+                                    t.type ===
+                                    "payment_made"
                             )
                             .reduce(
                                 (sum, t) =>
@@ -5260,9 +5290,13 @@ function renderReports() {
 
                         customer,
 
-                        purchases,
+                        creditSales,
 
-                        payments,
+                        paymentsReceived,
+
+                        creditPurchases,
+
+                        paymentsMade,
 
                         balance
                     };
@@ -5279,26 +5313,44 @@ function renderReports() {
             );
 
 
+    const totalReceivable =
+        rows.reduce(
+            (sum, row) =>
+                sum +
+                Math.max(
+                    row.balance,
+                    0
+                ),
+            0
+        );
+
+
+    const totalPayable =
+        rows.reduce(
+            (sum, row) =>
+                sum +
+                Math.max(
+                    -row.balance,
+                    0
+                ),
+            0
+        );
+
+
+    const totalSales =
+        rows.reduce(
+            (sum, row) =>
+                sum +
+                row.creditSales,
+            0
+        );
+
+
     const totalPurchases =
         rows.reduce(
             (sum, row) =>
-                sum + row.purchases,
-            0
-        );
-
-
-    const totalPayments =
-        rows.reduce(
-            (sum, row) =>
-                sum + row.payments,
-            0
-        );
-
-
-    const totalBalances =
-        rows.reduce(
-            (sum, row) =>
-                sum + row.balance,
+                sum +
+                row.creditPurchases,
             0
         );
 
@@ -5334,40 +5386,39 @@ function renderReports() {
         <div class="stats-grid">
 
             ${statCard(
+                "Receivable",
+                formatMoney(
+                    totalReceivable
+                ),
+                "◉",
+                "Customers owing Al Jefoon"
+            )}
+
+            ${statCard(
+                "Payable",
+                formatMoney(
+                    totalPayable
+                ),
+                "↙",
+                "Amounts owed to suppliers"
+            )}
+
+            ${statCard(
+                "Credit Sales",
+                formatMoney(
+                    totalSales
+                ),
+                "↑",
+                "Total credit sales"
+            )}
+
+            ${statCard(
                 "Credit Purchases",
                 formatMoney(
                     totalPurchases
                 ),
                 "▤",
-                "Total debit activity"
-            )}
-
-            ${statCard(
-                "Payments",
-                formatMoney(
-                    totalPayments
-                ),
-                "↓",
-                "Total credit activity"
-            )}
-
-            ${statCard(
-                "Net Receivable",
-                formatMoney(
-                    Math.max(
-                        totalBalances,
-                        0
-                    )
-                ),
-                "◉",
-                "Positive customer balances"
-            )}
-
-            ${statCard(
-                "Accounts",
-                customers.length,
-                "♙",
-                "Customer accounts"
+                "Total credit purchases"
             )}
 
         </div>
@@ -5408,8 +5459,10 @@ function renderReports() {
 
                                         <th>Customer</th>
                                         <th>Opening</th>
-                                        <th>Purchases</th>
-                                        <th>Payments</th>
+                                        <th>Credit Sales</th>
+                                        <th>Payments Received</th>
+                                        <th>Credit Purchases</th>
+                                        <th>Payments Made</th>
                                         <th>Balance</th>
 
                                     </tr>
@@ -5441,13 +5494,25 @@ function renderReports() {
 
                                                     <td>
                                                         ${formatMoney(
-                                                            row.purchases
+                                                            row.creditSales
                                                         )}
                                                     </td>
 
                                                     <td>
                                                         ${formatMoney(
-                                                            row.payments
+                                                            row.paymentsReceived
+                                                        )}
+                                                    </td>
+
+                                                    <td>
+                                                        ${formatMoney(
+                                                            row.creditPurchases
+                                                        )}
+                                                    </td>
+
+                                                    <td>
+                                                        ${formatMoney(
+                                                            row.paymentsMade
                                                         )}
                                                     </td>
 
@@ -5462,11 +5527,21 @@ function renderReports() {
                                                                         : "neutral"
                                                             }"
                                                         >
+
+                                                            ${
+                                                                row.balance > 0
+                                                                    ? "RECEIVABLE "
+                                                                    : row.balance < 0
+                                                                        ? "PAYABLE "
+                                                                        : "SETTLED "
+                                                            }
+
                                                             ${formatMoney(
                                                                 Math.abs(
                                                                     row.balance
                                                                 )
                                                             )}
+
                                                         </span>
 
                                                     </td>
@@ -5502,8 +5577,6 @@ function renderReports() {
             printReport
         );
 }
-
-
 /* =========================================================
    PRINT REPORT
 ========================================================= */
