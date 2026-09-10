@@ -3429,11 +3429,41 @@ function transactionTableHTML(
                                         transaction.customerId
                                     );
 
+
+                                const isReceivable =
+                                    transaction.type ===
+                                    "sale";
+
+
+                                const isPaymentReceived =
+                                    transaction.type ===
+                                    "payment_received";
+
+
+                                const isPayable =
+                                    transaction.type ===
+                                    "purchase";
+
+
+                                const isPaymentMade =
+                                    transaction.type ===
+                                    "payment_made";
+
+
                                 const isDebit =
                                     transaction.type ===
-                                        "purchase" ||
+                                    "debit";
+
+
+                                const isCredit =
                                     transaction.type ===
-                                        "debit";
+                                    "credit";
+
+
+                                const isPositive =
+                                    isReceivable ||
+                                    isPaymentMade ||
+                                    isDebit;
 
 
                                 return `
@@ -3490,13 +3520,13 @@ function transactionTableHTML(
 
                                             <span
                                                 class="amount ${
-                                                    isDebit
+                                                    isPositive
                                                         ? "positive"
                                                         : "negative"
                                                 }"
                                             >
                                                 ${
-                                                    isDebit
+                                                    isPositive
                                                         ? "+"
                                                         : "-"
                                                 }
@@ -3521,8 +3551,6 @@ function transactionTableHTML(
         </div>
     `;
 }
-
-
 /* =========================================================
    TRANSACTION TYPE BADGE
 ========================================================= */
