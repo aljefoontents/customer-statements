@@ -1,85 +1,87 @@
 /* =========================================================
    AL JEFOON TENTS
-   CUSTOMER STATEMENTS
-   APPLICATION ENGINE
+   CUSTOMER STATEMENTS & ACCOUNTS
+   VERSION 2.0
+
+   FEATURES
+   ---------------------------------------------------------
+   - Customers
+   - Opening balances
+   - Receivables
+   - Payables
+   - Transactions
+   - Payments received
+   - Payments made
+   - Cheques received
+   - Cheques issued
+   - Cheque register
+   - Edit transactions
+   - Delete transactions
+   - Edit customers
+   - Delete customers
+   - Edit cheques
+   - Delete cheques
+   - Customer statements
+   - Running balances
+   - Dashboard
+   - Print statements
+   - JSON backup / restore
+   - Dark mode
+   - 5-day cheque clearance alerts
 ========================================================= */
 
 "use strict";
-
 
 /* =========================================================
    STORAGE
 ========================================================= */
 
-const STORAGE_KEY =
-    "alJefoonCustomerStatementsV1";
-
-const THEME_KEY =
-    "alJefoonCustomerStatementsTheme";
-
+const STORAGE_KEY = "alJefoonCustomerStatementsV1";
+const THEME_KEY = "alJefoonCustomerStatementsTheme";
 
 /* =========================================================
    APPLICATION STATE
 ========================================================= */
 
-let appData = loadData();
+let state = loadState();
 
 let currentView = "dashboard";
-
-let selectedCustomerId = null;
-
-let transactionFilter = "all";
-
-let chequeFilter = "all";
-
-let printSelectedCustomers = new Set();
-
-let toastTimer = null;
-
+let currentCustomerId = null;
+let editingTransactionId = null;
+let editingCustomerId = null;
+let editingChequeId = null;
 
 /* =========================================================
-   DEFAULT DATA
+   DEFAULT STATE
 ========================================================= */
 
-function createEmptyData() {
-
+function defaultState() {
     return {
         customers: [],
         transactions: [],
         cheques: [],
-
-        settings: {
-            companyName: "Al Jefoon Tents",
-            currency: "AED",
-            notificationDays: 5
-        }
+        settings: {}
     };
 }
 
-
 /* =========================================================
-   LOAD DATA
+   LOAD STATE
 ========================================================= */
 
-function loadData() {
+function loadState() {
 
     try {
 
-        const saved =
+        const raw =
             localStorage.getItem(STORAGE_KEY);
 
-        if (!saved) {
-            return createEmptyData();
+        if (!raw) {
+            return defaultState();
         }
 
-        const parsed =
-            JSON.parse(saved);
-
-        const defaults =
-            createEmptyData();
+        const parsed = JSON.parse(raw);
 
         return {
-
             customers:
                 Array.isArray(parsed.customers)
                     ? parsed.customers
@@ -96,1402 +98,775 @@ function loadData() {
                     : [],
 
             settings:
-                {
-                    ...defaults.settings,
-                    ...(parsed.settings || {})
-                }
+                parsed.settings || {}
         };
 
     } catch (error) {
 
         console.error(
-            "Could not load application data:",
+            "Unable to load Customer Statements data:",
             error
         );
 
-        return createEmptyData();
+        return defaultState();
     }
 }
 
-
 /* =========================================================
-   SAVE DATA
+   SAVE
 ========================================================= */
 
-function saveData() {
+function save() {
 
     localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify(appData)
+        JSON.stringify(state)
     );
-
-    updateAlertBadges();
 }
 
-
 /* =========================================================
-   ID GENERATOR
+   HELPERS
 ========================================================= */
 
-function makeId(prefix) {
+function $(id) {
+    return document.getElementById(id);
+}
 
-    if (
-        window.crypto &&
-        typeof window.crypto.randomUUID === "function"
-    ) {
+function escapeHTML(value) {
 
-        return (
-            prefix +
-            "_" +
-            window.crypto.randomUUID()
-        );
-    }
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+function money(value) {
+
+    return `AED ${Number(value || 0).toLocaleString(
+        "en-AE",
+        {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        }
+    )}`;
+}
+
+function number(value) {
+
+    const n = parseFloat(value);
+
+    return Number.isFinite(n)
+        ? n
+        : 0;
+}
+
+function generateID(prefix = "ID") {
 
     return (
         prefix +
-        "_" +
-        Date.now() +
-        "_" +
+        Date.now().toString(36) +
         Math.random()
             .toString(36)
-            .substring(2, 10)
-    );
+            .substring(2, 8)
+    ).toUpperCase();
 }
 
+function today() {
 
-/* =========================================================
-   DOM ELEMENTS
-========================================================= */
-
-const appContent =
-    document.getElementById("appContent");
-
-const pageTitle =
-    document.getElementById("pageTitle");
-
-const pageSubtitle =
-    document.getElementById("pageSubtitle");
-
-const modalOverlay =
-    document.getElementById("modalOverlay");
-
-const modal =
-    document.getElementById("modal");
-
-const modalTitle =
-    document.getElementById("modalTitle");
-
-const modalSubtitle =
-    document.getElementById("modalSubtitle");
-
-const modalBody =
-    document.getElementById("modalBody");
-
-const modalClose =
-    document.getElementById("modalClose");
-
-const toast =
-    document.getElementById("toast");
-
-const toastIcon =
-    document.getElementById("toastIcon");
-
-const toastMessage =
-    document.getElementById("toastMessage");
-
-const sidebar =
-    document.getElementById("sidebar");
-
-const mobileOverlay =
-    document.getElementById("mobileOverlay");
-
-const mobileMenuButton =
-    document.getElementById("mobileMenuButton");
-
-const themeToggle =
-    document.getElementById("themeToggle");
-
-const themeIcon =
-    document.getElementById("themeIcon");
-
-const themeText =
-    document.getElementById("themeText");
-
-const quickAddButton =
-    document.getElementById("quickAddButton");
-
-const notificationButton =
-    document.getElementById("notificationButton");
-
-const notificationBadge =
-    document.getElementById("notificationBadge");
-
-const chequeAlertBadge =
-    document.getElementById("chequeAlertBadge");
-
-
-/* =========================================================
-   INITIALIZATION
-========================================================= */
-
-document.addEventListener(
-    "DOMContentLoaded",
-    initializeApp
-);
-
-
-function initializeApp() {
-
-    loadTheme();
-
-    setupNavigation();
-
-    setupGlobalButtons();
-
-    updateAlertBadges();
-
-    renderView("dashboard");
-
-    checkChequeNotifications();
-}
-
-
-/* =========================================================
-   NAVIGATION
-========================================================= */
-
-function setupNavigation() {
-
-    document
-        .querySelectorAll(".nav-item")
-        .forEach(button => {
-
-            button.addEventListener(
-                "click",
-                () => {
-
-                    const view =
-                        button.dataset.view;
-
-                    if (!view) return;
-
-                    renderView(view);
-
-                    closeMobileMenu();
-                }
-            );
-        });
-}
-
-
-/* =========================================================
-   GLOBAL BUTTONS
-========================================================= */
-
-function setupGlobalButtons() {
-
-    modalClose.addEventListener(
-        "click",
-        closeModal
-    );
-
-    modalOverlay.addEventListener(
-        "click",
-        event => {
-
-            if (
-                event.target === modalOverlay
-            ) {
-
-                closeModal();
-            }
-        }
-    );
-
-
-    quickAddButton.addEventListener(
-        "click",
-        () => openTransactionModal()
-    );
-
-
-    notificationButton.addEventListener(
-        "click",
-        () => renderView("cheques")
-    );
-
-
-    themeToggle.addEventListener(
-        "click",
-        toggleTheme
-    );
-
-
-    mobileMenuButton.addEventListener(
-        "click",
-        openMobileMenu
-    );
-
-
-    mobileOverlay.addEventListener(
-        "click",
-        closeMobileMenu
-    );
-
-
-    document.addEventListener(
-        "keydown",
-        event => {
-
-            if (event.key === "Escape") {
-
-                closeModal();
-
-                closeMobileMenu();
-            }
-        }
-    );
-}
-
-
-/* =========================================================
-   RENDER VIEW
-========================================================= */
-
-function renderView(view) {
-
-    currentView = view;
-
-    updateNavigation(view);
-
-    const config =
-        getViewConfig(view);
-
-    pageTitle.textContent =
-        config.title;
-
-    pageSubtitle.textContent =
-        config.subtitle;
-
-
-    switch (view) {
-
-        case "dashboard":
-            renderDashboard();
-            break;
-
-        case "customers":
-            renderCustomers();
-            break;
-
-        case "statements":
-            renderStatements();
-            break;
-
-        case "transactions":
-            renderTransactions();
-            break;
-
-        case "cheques":
-            renderCheques();
-            break;
-
-        case "print":
-            renderPrintStatements();
-            break;
-
-        case "reports":
-            renderReports();
-            break;
-
-        case "backup":
-            renderBackup();
-            break;
-
-        case "settings":
-            renderSettings();
-            break;
-
-        case "customer":
-            renderCustomerStatement(
-                selectedCustomerId
-            );
-            break;
-
-        default:
-            renderDashboard();
-    }
-}
-
-
-/* =========================================================
-   VIEW CONFIGURATION
-========================================================= */
-
-function getViewConfig(view) {
-
-    const configs = {
-
-        dashboard: {
-            title: "Dashboard",
-            subtitle: "Customer accounts overview"
-        },
-
-        customers: {
-            title: "Customers",
-            subtitle: "Manage your customer accounts"
-        },
-
-        statements: {
-            title: "Statements",
-            subtitle: "View customer account statements"
-        },
-
-        transactions: {
-            title: "Transactions",
-            subtitle: "All customer account transactions"
-        },
-
-        cheques: {
-            title: "Cheque Register",
-            subtitle: "Track issued and received cheques"
-        },
-
-        print: {
-            title: "Print Statements",
-            subtitle: "Select customer statements to print"
-        },
-
-        reports: {
-            title: "Reports",
-            subtitle: "Customer account summaries"
-        },
-
-        backup: {
-            title: "Backup & Sync",
-            subtitle: "Protect and export your account data"
-        },
-
-        settings: {
-            title: "Settings",
-            subtitle: "Application preferences"
-        },
-
-        customer: {
-            title: "Customer Statement",
-            subtitle: "Account transaction history"
-        }
-    };
+    const d = new Date();
 
     return (
-        configs[view] ||
-        configs.dashboard
+        d.getFullYear() +
+        "-" +
+        String(d.getMonth() + 1).padStart(2, "0") +
+        "-" +
+        String(d.getDate()).padStart(2, "0")
     );
 }
 
+function formatDate(value) {
 
-/* =========================================================
-   UPDATE NAVIGATION
-========================================================= */
+    if (!value) {
+        return "-";
+    }
 
-function updateNavigation(view) {
+    const d = new Date(value);
 
-    document
-        .querySelectorAll(".nav-item")
-        .forEach(button => {
+    if (isNaN(d)) {
+        return value;
+    }
 
-            button.classList.toggle(
-                "active",
-                button.dataset.view === view
-            );
-        });
-}
-
-
-/* =========================================================
-   DASHBOARD
-========================================================= */
-
-function renderDashboard() {
-
-    const customers =
-        appData.customers;
-
-    const transactions =
-        appData.transactions;
-
-    const balances =
-        customers.map(
-            customer =>
-                getCustomerBalance(customer.id)
-        );
-
-    const totalReceivable =
-        balances
-            .filter(value => value > 0)
-            .reduce(
-                (sum, value) => sum + value,
-                0
-            );
-
-    const totalCredit =
-        balances
-            .filter(value => value < 0)
-            .reduce(
-                (sum, value) => sum + Math.abs(value),
-                0
-            );
-
-    const outstandingCheques =
-        appData.cheques.filter(
-            cheque =>
-                ![
-                    "Cleared",
-                    "Returned/Bounced",
-                    "Cancelled"
-                ].includes(cheque.status)
-        );
-
-    const alerts =
-        getChequeAlerts();
-
-
-    const recentTransactions =
-        [...transactions]
-            .sort(
-                (a, b) =>
-                    new Date(b.date) -
-                    new Date(a.date)
-            )
-            .slice(0, 8);
-
-
-    appContent.innerHTML = `
-
-        <div class="page-header">
-
-            <div>
-                <h1>Dashboard</h1>
-
-                <p>
-                    Overview of your customer accounts
-                    and outstanding cheques.
-                </p>
-            </div>
-
-            <div class="page-header-actions">
-
-                <button
-                    class="primary-button"
-                    id="dashboardAddCustomer"
-                >
-                    + Add Customer
-                </button>
-
-                <button
-                    class="secondary-button"
-                    id="dashboardAddTransaction"
-                >
-                    + Transaction
-                </button>
-
-            </div>
-
-        </div>
-
-
-        <div class="stats-grid">
-
-            ${statCard(
-                "Customers",
-                customers.length,
-                "♙",
-                "Active customer accounts"
-            )}
-
-            ${statCard(
-                "Receivable",
-                formatMoney(totalReceivable),
-                "◉",
-                "Customers owing Al Jefoon"
-            )}
-
-            ${statCard(
-                "Customer Credits",
-                formatMoney(totalCredit),
-                "↙",
-                "Credit balances"
-            )}
-
-            ${statCard(
-                "Outstanding Cheques",
-                formatMoney(
-                    outstandingCheques.reduce(
-                        (sum, cheque) =>
-                            sum +
-                            Number(cheque.amount || 0),
-                        0
-                    )
-                ),
-                "▭",
-                `${outstandingCheques.length} cheque(s)`
-            )}
-
-        </div>
-
-
-        ${
-            alerts.length
-                ? `
-                    <div class="card card-padding">
-
-                        <div class="card-header"
-                             style="margin:-21px -21px 18px;">
-
-                            <div>
-                                <div class="card-title">
-                                    Cheque Alerts
-                                </div>
-
-                                <div class="card-subtitle">
-                                    Cheques requiring attention
-                                </div>
-                            </div>
-
-                            <button
-                                class="secondary-button"
-                                id="viewChequeAlerts"
-                            >
-                                View All
-                            </button>
-
-                        </div>
-
-                        ${alerts
-                            .slice(0, 5)
-                            .map(
-                                alert =>
-                                    alertHTML(alert)
-                            )
-                            .join("")
-                        }
-
-                    </div>
-                `
-                : ""
+    return d.toLocaleDateString(
+        "en-AE",
+        {
+            day: "2-digit",
+            month: "short",
+            year: "numeric"
         }
-
-
-        <div class="dashboard-grid"
-             style="margin-top:20px;">
-
-            <div class="card">
-
-                <div class="card-header">
-
-                    <div>
-                        <div class="card-title">
-                            Recent Transactions
-                        </div>
-
-                        <div class="card-subtitle">
-                            Latest customer account activity
-                        </div>
-                    </div>
-
-                    <button
-                        class="secondary-button"
-                        id="viewAllTransactions"
-                    >
-                        View All
-                    </button>
-
-                </div>
-
-                ${
-                    recentTransactions.length
-                        ? transactionTableHTML(
-                            recentTransactions
-                        )
-                        : emptyStateHTML(
-                            "No Transactions",
-                            "Add your first customer transaction."
-                        )
-                }
-
-            </div>
-
-
-            <div class="card">
-
-                <div class="card-header">
-
-                    <div>
-                        <div class="card-title">
-                            Customer Balances
-                        </div>
-
-                        <div class="card-subtitle">
-                            Accounts with outstanding balances
-                        </div>
-                    </div>
-
-                </div>
-
-                ${
-                    customers.length
-                        ? customerBalanceListHTML(
-                            customers
-                                .map(customer => ({
-                                    customer,
-                                    balance:
-                                        getCustomerBalance(
-                                            customer.id
-                                        )
-                                }))
-                                .filter(
-                                    item =>
-                                        item.balance !== 0
-                                )
-                                .sort(
-                                    (a, b) =>
-                                        Math.abs(
-                                            b.balance
-                                        ) -
-                                        Math.abs(
-                                            a.balance
-                                        )
-                                )
-                                .slice(0, 8)
-                        )
-                        : emptyStateHTML(
-                            "No Customers",
-                            "Add customers to start tracking statements."
-                        )
-                }
-
-            </div>
-
-        </div>
-    `;
-
-
-    document
-        .getElementById("dashboardAddCustomer")
-        ?.addEventListener(
-            "click",
-            () => openCustomerModal()
-        );
-
-    document
-        .getElementById("dashboardAddTransaction")
-        ?.addEventListener(
-            "click",
-            () => openTransactionModal()
-        );
-
-    document
-        .getElementById("viewAllTransactions")
-        ?.addEventListener(
-            "click",
-            () => renderView("transactions")
-        );
-
-    document
-        .getElementById("viewChequeAlerts")
-        ?.addEventListener(
-            "click",
-            () => renderView("cheques")
-        );
+    );
 }
 
-
 /* =========================================================
-   STAT CARD
+   CUSTOMER HELPERS
 ========================================================= */
 
-function statCard(
-    label,
-    value,
-    icon,
-    small
-) {
+function getCustomer(id) {
+
+    return state.customers.find(
+        customer =>
+            customer.id === id
+    );
+}
+
+function customerName(id) {
+
+    const customer =
+        getCustomer(id);
+
+    return customer
+        ? customer.name
+        : "Unknown Customer";
+}
+
+/* =========================================================
+   TRANSACTION DIRECTION
+=========================================================
+
+   RECEIVABLE
+   ----------
+   Customer owes Al Jefoon.
+
+   PAYABLE
+   -------
+   Al Jefoon owes customer.
+
+========================================================= */
+
+const RECEIVABLE = "receivable";
+const PAYABLE = "payable";
+
+/* =========================================================
+   TRANSACTION TYPES
+========================================================= */
+
+const TRANSACTION_TYPES = {
+
+    creditPurchase: {
+        label: "Credit Purchase",
+        direction: RECEIVABLE
+    },
+
+    paymentReceived: {
+        label: "Payment Received",
+        direction: RECEIVABLE
+    },
+
+    advanceReceived: {
+        label: "Advance Received",
+        direction: PAYABLE
+    },
+
+    paymentMade: {
+        label: "Payment Made",
+        direction: PAYABLE
+    },
+
+    debitAdjustment: {
+        label: "Debit Adjustment",
+        direction: RECEIVABLE
+    },
+
+    creditAdjustment: {
+        label: "Credit Adjustment",
+        direction: PAYABLE
+    }
+};
+
+/* =========================================================
+   GET TRANSACTION TYPE
+========================================================= */
+
+function getTransactionType(type) {
+
+    return TRANSACTION_TYPES[type] || {
+        label: type || "Transaction",
+        direction: RECEIVABLE
+    };
+}
+
+/* =========================================================
+   TRANSACTION DIRECTION LABEL
+========================================================= */
+
+function directionLabel(direction) {
+
+    if (direction === PAYABLE) {
+
+        return `
+            <span class="direction-badge payable">
+                🔴 PAYABLE
+            </span>
+        `;
+    }
 
     return `
-
-        <div class="card stat-card">
-
-            <div class="stat-top">
-
-                <div class="stat-label">
-                    ${escapeHTML(label)}
-                </div>
-
-                <div class="stat-icon">
-                    ${icon}
-                </div>
-
-            </div>
-
-            <div class="stat-value">
-                ${escapeHTML(String(value))}
-            </div>
-
-            <div class="stat-small">
-                ${escapeHTML(small)}
-            </div>
-
-        </div>
+        <span class="direction-badge receivable">
+            🟢 RECEIVABLE
+        </span>
     `;
 }
 
-
 /* =========================================================
-   CUSTOMER BALANCE
+   CALCULATE CUSTOMER TOTALS
 ========================================================= */
 
-function getCustomerBalance(customerId) {
+function getCustomerTotals(customerId) {
+
+    let receivable = 0;
+    let payable = 0;
+
+    const customer =
+        getCustomer(customerId);
+
+    /* ---------------------------------------------
+       OPENING BALANCE
+       --------------------------------------------- */
+
+    if (customer) {
+
+        const opening =
+            number(customer.openingBalance);
+
+        const openingDirection =
+            customer.openingDirection ||
+            RECEIVABLE;
+
+        if (openingDirection === PAYABLE) {
+
+            payable += opening;
+
+        } else {
+
+            receivable += opening;
+        }
+    }
+
+    /* ---------------------------------------------
+       TRANSACTIONS
+       --------------------------------------------- */
+
+    state.transactions
+        .filter(
+            transaction =>
+                transaction.customerId === customerId
+        )
+        .forEach(transaction => {
+
+            const amount =
+                number(transaction.amount);
+
+            const direction =
+                transaction.direction ||
+                getTransactionType(
+                    transaction.type
+                ).direction;
+
+            /*
+               Payment Received reduces receivable.
+            */
+
+            if (
+                transaction.type ===
+                "paymentReceived"
+            ) {
+
+                receivable -= amount;
+
+                return;
+            }
+
+            /*
+               Payment Made reduces payable.
+            */
+
+            if (
+                transaction.type ===
+                "paymentMade"
+            ) {
+
+                payable -= amount;
+
+                return;
+            }
+
+            /*
+               Other transactions add to
+               their respective side.
+            */
+
+            if (direction === PAYABLE) {
+
+                payable += amount;
+
+            } else {
+
+                receivable += amount;
+            }
+
+        });
+
+    /*
+       Never display negative side balances.
+       A negative receivable effectively becomes
+       payable, and vice versa.
+    */
+
+    if (receivable < 0) {
+
+        payable += Math.abs(receivable);
+
+        receivable = 0;
+    }
+
+    if (payable < 0) {
+
+        receivable += Math.abs(payable);
+
+        payable = 0;
+    }
+
+    return {
+        receivable,
+        payable,
+        net: receivable - payable
+    };
+}
+
+/* =========================================================
+   GET CUSTOMER TRANSACTIONS
+========================================================= */
+
+function getCustomerTransactions(customerId) {
+
+    return state.transactions
+        .filter(
+            transaction =>
+                transaction.customerId === customerId
+        )
+        .sort(
+            (a, b) =>
+                new Date(a.date || 0) -
+                new Date(b.date || 0)
+        );
+}
+
+/* =========================================================
+   RUNNING STATEMENT
+========================================================= */
+
+function buildStatement(customerId) {
 
     const customer =
         getCustomer(customerId);
 
     if (!customer) {
-        return 0;
+        return [];
     }
 
-    let balance =
-        Number(customer.openingBalance || 0);
+    let receivable = 0;
+    let payable = 0;
 
+    const rows = [];
 
-    appData.transactions
-        .filter(
-            transaction =>
-                transaction.customerId ===
-                customerId
-        )
+    /* ---------------------------------------------
+       OPENING BALANCE
+    --------------------------------------------- */
+
+    const opening =
+        number(customer.openingBalance);
+
+    const openingDirection =
+        customer.openingDirection ||
+        RECEIVABLE;
+
+    if (openingDirection === PAYABLE) {
+
+        payable = opening;
+
+    } else {
+
+        receivable = opening;
+    }
+
+    rows.push({
+        date: customer.openingDate || "",
+        description: "Opening Balance",
+        type: "opening",
+        direction: openingDirection,
+        amount: opening,
+        receivable,
+        payable
+    });
+
+    /* ---------------------------------------------
+       TRANSACTIONS
+    --------------------------------------------- */
+
+    getCustomerTransactions(customerId)
         .forEach(transaction => {
 
             const amount =
-                Number(transaction.amount || 0);
+                number(transaction.amount);
+
+            const type =
+                getTransactionType(
+                    transaction.type
+                );
+
+            const direction =
+                transaction.direction ||
+                type.direction;
 
             if (
                 transaction.type ===
-                "purchase"
+                "paymentReceived"
             ) {
 
-                balance += amount;
+                receivable -= amount;
 
             } else if (
                 transaction.type ===
-                "payment"
+                "paymentMade"
             ) {
 
-                balance -= amount;
+                payable -= amount;
 
             } else if (
-                transaction.type ===
-                "debit"
+                direction === PAYABLE
             ) {
 
-                balance += amount;
+                payable += amount;
 
-            } else if (
-                transaction.type ===
-                "credit"
-            ) {
+            } else {
 
-                balance -= amount;
+                receivable += amount;
             }
+
+            rows.push({
+
+                ...transaction,
+
+                description:
+                    transaction.description ||
+                    type.label,
+
+                direction,
+
+                receivable,
+                payable
+            });
         });
 
-    return balance;
+    return rows;
 }
 
-
 /* =========================================================
-   CUSTOMER BALANCE LIST
+   TOAST
 ========================================================= */
 
-function customerBalanceListHTML(items) {
+function toast(message, type = "success") {
 
-    if (!items.length) {
+    let container =
+        $("toastContainer");
 
-        return emptyStateHTML(
-            "All Clear",
-            "There are currently no outstanding customer balances."
+    if (!container) {
+
+        container =
+            document.createElement("div");
+
+        container.id =
+            "toastContainer";
+
+        document.body.appendChild(
+            container
         );
     }
 
-    return `
+    const item =
+        document.createElement("div");
 
-        <div style="padding:5px 0;">
+    item.className =
+        `toast ${type}`;
 
-            ${items.map(
-                item => {
+    item.textContent =
+        message;
 
-                    const balance =
-                        item.balance;
+    container.appendChild(item);
 
-                    return `
+    setTimeout(
+        () => item.remove(),
+        3500
+    );
+}
 
-                        <button
-                            class="customer-balance-row"
-                            data-customer-id="${item.customer.id}"
-                            style="
-                                width:100%;
-                                border:0;
-                                border-bottom:1px solid var(--border);
-                                background:transparent;
-                                color:var(--text);
-                                padding:13px 18px;
-                                display:flex;
-                                align-items:center;
-                                justify-content:space-between;
-                                gap:10px;
-                                text-align:left;
-                            "
-                        >
+/* =========================================================
+   MODAL
+========================================================= */
 
-                            <span>
+function openModal(content) {
 
-                                <strong>
-                                    ${escapeHTML(
-                                        item.customer.name
-                                    )}
-                                </strong>
+    let modal =
+        $("appModal");
 
-                                <small
-                                    style="
-                                        display:block;
-                                        margin-top:3px;
-                                        color:var(--muted);
-                                    "
-                                >
-                                    ${escapeHTML(
-                                        item.customer.phone ||
-                                        "No phone"
-                                    )}
-                                </small>
+    if (!modal) {
 
-                            </span>
+        modal =
+            document.createElement("div");
 
-                            <span
-                                class="amount ${
-                                    balance > 0
-                                        ? "positive"
-                                        : balance < 0
-                                            ? "negative"
-                                            : "neutral"
-                                }"
-                            >
-                                ${formatMoney(
-                                    Math.abs(balance)
-                                )}
-                            </span>
+        modal.id =
+            "appModal";
 
-                        </button>
-                    `;
-                }
-            ).join("")}
+        modal.className =
+            "modal-overlay";
 
+        document.body.appendChild(
+            modal
+        );
+    }
+
+    modal.innerHTML = `
+        <div class="modal-card">
+            ${content}
         </div>
     `;
 
+    modal.classList.add("show");
+
+    modal.onclick =
+        function(event) {
+
+            if (
+                event.target === modal
+            ) {
+
+                closeModal();
+            }
+        };
 }
 
+function closeModal() {
 
-/* =========================================================
-   CUSTOMER BALANCE CLICK
-========================================================= */
+    const modal =
+        $("appModal");
 
-document.addEventListener(
-    "click",
-    event => {
+    if (modal) {
 
-        const button =
-            event.target.closest(
-                ".customer-balance-row"
-            );
-
-        if (!button) return;
-
-        const customerId =
-            button.dataset.customerId;
-
-        openCustomerStatement(
-            customerId
+        modal.classList.remove(
+            "show"
         );
     }
-);
-
+}
 
 /* =========================================================
-   CUSTOMERS
+   CUSTOMER FORM
 ========================================================= */
 
-function renderCustomers() {
+function openCustomerForm(customerId = null) {
 
-    const customers =
-        appData.customers;
+    editingCustomerId =
+        customerId;
 
-    appContent.innerHTML = `
+    const customer =
+        customerId
+            ? getCustomer(customerId)
+            : null;
 
-        <div class="page-header">
+    openModal(`
 
-            <div>
-                <h1>Customers</h1>
+        <div class="modal-header">
+            <h2>
+                ${customer
+                    ? "✏️ Edit Customer"
+                    : "👤 Add Customer"}
+            </h2>
 
-                <p>
-                    Manage customer accounts,
-                    opening balances and contact details.
-                </p>
-            </div>
-
-            <div class="page-header-actions">
-
-                <button
-                    class="primary-button"
-                    id="addCustomerButton"
-                >
-                    + Add Customer
-                </button>
-
-            </div>
-
+            <button
+                class="modal-close"
+                onclick="closeModal()"
+            >
+                ×
+            </button>
         </div>
 
-
-        <div class="card filter-bar">
-
-            <div class="search-box">
-
-                <span class="search-icon">
-                    ⌕
-                </span>
-
-                <input
-                    id="customerSearch"
-                    type="search"
-                    placeholder="Search customers..."
-                >
-
-            </div>
-
-        </div>
-
-
-        <div
-            id="customerGrid"
-            class="customer-grid"
+        <form
+            id="customerForm"
+            onsubmit="saveCustomer(event)"
         >
-
-            ${
-                customers.length
-                    ? customersHTML(customers)
-                    : emptyStateHTML(
-                        "No Customers Yet",
-                        "Add your first customer to begin keeping account statements."
-                    )
-            }
-
-        </div>
-    `;
-
-
-    document
-        .getElementById("addCustomerButton")
-        ?.addEventListener(
-            "click",
-            () => openCustomerModal()
-        );
-
-
-    document
-        .getElementById("customerSearch")
-        ?.addEventListener(
-            "input",
-            filterCustomers
-        );
-
-
-    setupCustomerCardButtons();
-}
-
-
-/* =========================================================
-   CUSTOMER CARDS
-========================================================= */
-
-function customersHTML(customers) {
-
-    return customers
-        .map(customer => {
-
-            const balance =
-                getCustomerBalance(
-                    customer.id
-                );
-
-            const initials =
-                getInitials(customer.name);
-
-            return `
-
-                <div class="card customer-card">
-
-                    <div class="customer-card-top">
-
-                        <div class="customer-avatar">
-                            ${escapeHTML(initials)}
-                        </div>
-
-                        ${
-                            balance > 0
-                                ? `
-                                    <span class="badge badge-danger">
-                                        Outstanding
-                                    </span>
-                                `
-                                : balance < 0
-                                    ? `
-                                        <span class="badge badge-success">
-                                            Credit
-                                        </span>
-                                    `
-                                    : `
-                                        <span class="badge badge-neutral">
-                                            Settled
-                                        </span>
-                                    `
-                        }
-
-                    </div>
-
-
-                    <div class="customer-name">
-                        ${escapeHTML(customer.name)}
-                    </div>
-
-
-                    <div class="customer-detail">
-                        ${
-                            customer.phone
-                                ? "☎ " +
-                                  escapeHTML(customer.phone)
-                                : "No phone number"
-                        }
-                    </div>
-
-
-                    <div class="customer-detail">
-                        ${
-                            customer.email
-                                ? "✉ " +
-                                  escapeHTML(customer.email)
-                                : "No email"
-                        }
-                    </div>
-
-
-                    <div class="customer-balance">
-
-                        <div>
-
-                            <div class="balance-label">
-                                Current Balance
-                            </div>
-
-                            <div
-                                class="balance-value ${
-                                    balance > 0
-                                        ? "amount positive"
-                                        : balance < 0
-                                            ? "amount negative"
-                                            : ""
-                                }"
-                            >
-                                ${formatMoney(
-                                    Math.abs(balance)
-                                )}
-                            </div>
-
-                        </div>
-
-                    </div>
-
-
-                    <div class="customer-actions">
-
-                        <button
-                            class="secondary-button"
-                            data-action="statement"
-                            data-id="${customer.id}"
-                        >
-                            Statement
-                        </button>
-
-                        <button
-                            class="primary-button"
-                            data-action="transaction"
-                            data-id="${customer.id}"
-                        >
-                            + Entry
-                        </button>
-
-                    </div>
-
-                </div>
-            `;
-        })
-        .join("");
-}
-
-
-/* =========================================================
-   CUSTOMER CARD BUTTONS
-========================================================= */
-
-function setupCustomerCardButtons() {
-
-    document
-        .querySelectorAll(
-            '[data-action="statement"]'
-        )
-        .forEach(button => {
-
-            button.addEventListener(
-                "click",
-                () =>
-                    openCustomerStatement(
-                        button.dataset.id
-                    )
-            );
-        });
-
-
-    document
-        .querySelectorAll(
-            '[data-action="transaction"]'
-        )
-        .forEach(button => {
-
-            button.addEventListener(
-                "click",
-                () =>
-                    openTransactionModal(
-                        button.dataset.id
-                    )
-            );
-        });
-}
-
-
-/* =========================================================
-   FILTER CUSTOMERS
-========================================================= */
-
-function filterCustomers(event) {
-
-    const query =
-        event.target.value
-            .trim()
-            .toLowerCase();
-
-    const filtered =
-        appData.customers.filter(
-            customer =>
-                customer.name
-                    .toLowerCase()
-                    .includes(query) ||
-
-                (customer.phone || "")
-                    .toLowerCase()
-                    .includes(query) ||
-
-                (customer.email || "")
-                    .toLowerCase()
-                    .includes(query)
-        );
-
-
-    const grid =
-        document.getElementById(
-            "customerGrid"
-        );
-
-    if (!grid) return;
-
-    grid.innerHTML =
-        filtered.length
-            ? customersHTML(filtered)
-            : emptyStateHTML(
-                "No Matches",
-                "No customers match your search."
-            );
-
-    setupCustomerCardButtons();
-}
-
-
-/* =========================================================
-   ADD CUSTOMER MODAL
-========================================================= */
-
-function openCustomerModal() {
-
-    openModal(
-        "Add Customer",
-        "Create a new customer account",
-        `
-
-        <form id="customerForm">
 
             <div class="form-grid">
 
-                <div class="form-group full">
-
-                    <label class="form-label">
-                        Customer Name
-                        <span class="required">*</span>
-                    </label>
-
+                <div class="form-group">
+                    <label>Customer Name *</label>
                     <input
-                        class="form-control"
                         id="customerName"
                         required
-                        placeholder="Enter customer / company name"
+                        value="${escapeHTML(
+                            customer?.name || ""
+                        )}"
                     >
-
                 </div>
 
+                <div class="form-group">
+                    <label>Company Name</label>
+                    <input
+                        id="customerCompany"
+                        value="${escapeHTML(
+                            customer?.company || ""
+                        )}"
+                    >
+                </div>
 
                 <div class="form-group">
-
-                    <label class="form-label">
-                        Phone
-                    </label>
-
+                    <label>Contact Person</label>
                     <input
-                        class="form-control"
+                        id="customerContact"
+                        value="${escapeHTML(
+                            customer?.contact || ""
+                        )}"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label>Phone</label>
+                    <input
                         id="customerPhone"
-                        type="tel"
-                        placeholder="Phone number"
+                        value="${escapeHTML(
+                            customer?.phone || ""
+                        )}"
                     >
-
                 </div>
 
-
                 <div class="form-group">
-
-                    <label class="form-label">
-                        Email
-                    </label>
-
+                    <label>Email</label>
                     <input
-                        class="form-control"
                         id="customerEmail"
                         type="email"
-                        placeholder="Email address"
+                        value="${escapeHTML(
+                            customer?.email || ""
+                        )}"
                     >
-
                 </div>
 
+                <div class="form-group">
+                    <label>Opening Balance</label>
+                    <input
+                        id="openingBalance"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value="${customer
+                            ? number(
+                                customer.openingBalance
+                              )
+                            : 0}"
+                    >
+                </div>
 
-                <div class="form-group full">
+                <div class="form-group">
+                    <label>Opening Balance Type</label>
 
-                    <label class="form-label">
-                        Opening Balance
-                    </label>
+                    <select id="openingDirection">
+
+                        <option
+                            value="receivable"
+                            ${
+                                (
+                                    customer?.openingDirection ||
+                                    RECEIVABLE
+                                ) === RECEIVABLE
+                                    ? "selected"
+                                    : ""
+                            }
+                        >
+                            🟢 Receivable -
+                            Customer owes Al Jefoon
+                        </option>
+
+                        <option
+                            value="payable"
+                            ${
+                                customer?.openingDirection ===
+                                PAYABLE
+                                    ? "selected"
+                                    : ""
+                            }
+                        >
+                            🔴 Payable -
+                            Al Jefoon owes customer
+                        </option>
+
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Opening Date</label>
 
                     <input
-                        class="form-control"
-                        id="customerOpeningBalance"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value="0"
+                        id="openingDate"
+                        type="date"
+                        value="${
+                            customer?.openingDate ||
+                            today()
+                        }"
                     >
-
-                    <div class="form-help">
-                        Enter the amount outstanding at the beginning
-                        of your records.
-                    </div>
-
                 </div>
 
-
                 <div class="form-group full">
-
-                    <label class="form-label">
-                        Address
-                    </label>
+                    <label>Address</label>
 
                     <textarea
-                        class="form-control"
                         id="customerAddress"
-                        placeholder="Customer address"
-                    ></textarea>
-
+                    >${escapeHTML(
+                        customer?.address || ""
+                    )}</textarea>
                 </div>
 
-
                 <div class="form-group full">
-
-                    <label class="form-label">
-                        Notes
-                    </label>
+                    <label>Notes</label>
 
                     <textarea
-                        class="form-control"
                         id="customerNotes"
-                        placeholder="Optional notes"
-                    ></textarea>
-
+                    >${escapeHTML(
+                        customer?.notes || ""
+                    )}</textarea>
                 </div>
 
             </div>
 
-
-            <div class="modal-footer">
+            <div class="modal-actions">
 
                 <button
                     type="button"
-                    class="secondary-button"
-                    id="cancelCustomer"
+                    class="btn secondary"
+                    onclick="closeModal()"
                 >
                     Cancel
                 </button>
 
                 <button
                     type="submit"
-                    class="primary-button"
+                    class="btn primary"
                 >
-                    Save Customer
+                    💾 Save Customer
                 </button>
 
             </div>
 
         </form>
-        `
-    );
-
-
-    document
-        .getElementById("customerForm")
-        .addEventListener(
-            "submit",
-            saveCustomer
-        );
-
-
-    document
-        .getElementById("cancelCustomer")
-        .addEventListener(
-            "click",
-            closeModal
-        );
+    `);
 }
-
 
 /* =========================================================
    SAVE CUSTOMER
@@ -1502,146 +877,252 @@ function saveCustomer(event) {
     event.preventDefault();
 
     const name =
-        document
-            .getElementById("customerName")
-            .value
-            .trim();
+        $("customerName").value.trim();
 
     if (!name) {
 
-        showToast(
-            "Please enter the customer name.",
-            "!"
+        toast(
+            "Customer name is required.",
+            "error"
         );
 
         return;
     }
 
-
-    const customer = {
-
-        id:
-            makeId("customer"),
+    const data = {
 
         name,
 
+        company:
+            $("customerCompany").value.trim(),
+
+        contact:
+            $("customerContact").value.trim(),
+
         phone:
-            document
-                .getElementById("customerPhone")
-                .value
-                .trim(),
+            $("customerPhone").value.trim(),
 
         email:
-            document
-                .getElementById("customerEmail")
-                .value
-                .trim(),
-
-        address:
-            document
-                .getElementById("customerAddress")
-                .value
-                .trim(),
-
-        notes:
-            document
-                .getElementById("customerNotes")
-                .value
-                .trim(),
+            $("customerEmail").value.trim(),
 
         openingBalance:
-            Number(
-                document
-                    .getElementById(
-                        "customerOpeningBalance"
-                    )
-                    .value || 0
+            number(
+                $("openingBalance").value
             ),
 
-        createdAt:
-            new Date().toISOString()
+        openingDirection:
+            $("openingDirection").value,
+
+        openingDate:
+            $("openingDate").value ||
+            today(),
+
+        address:
+            $("customerAddress").value.trim(),
+
+        notes:
+            $("customerNotes").value.trim()
     };
 
+    if (editingCustomerId) {
 
-    appData.customers.push(customer);
+        const customer =
+            getCustomer(
+                editingCustomerId
+            );
 
-    saveData();
+        if (customer) {
+
+            Object.assign(
+                customer,
+                data
+            );
+        }
+
+        toast(
+            "Customer updated successfully."
+        );
+
+    } else {
+
+        state.customers.push({
+
+            id:
+                generateID("CUS"),
+
+            createdAt:
+                new Date().toISOString(),
+
+            ...data
+        });
+
+        toast(
+            "Customer added successfully."
+        );
+    }
+
+    save();
 
     closeModal();
 
-    showToast(
-        "Customer added successfully."
-    );
-
-    renderView("customers");
+    render();
 }
-
 
 /* =========================================================
-   TRANSACTION MODAL
+   DELETE CUSTOMER
 ========================================================= */
 
-function openTransactionModal(
-    preselectedCustomerId = null
-) {
+function deleteCustomer(customerId) {
 
-    const defaultCustomer =
-        preselectedCustomerId ||
-        selectedCustomerId ||
-        "";
+    const customer =
+        getCustomer(customerId);
 
+    if (!customer) {
+        return;
+    }
 
-    openModal(
-        "Add Transaction",
-        "Record a customer account entry",
-        transactionFormHTML(
-            defaultCustomer
-        )
+    const transactionCount =
+        state.transactions.filter(
+            transaction =>
+                transaction.customerId ===
+                customerId
+        ).length;
+
+    if (transactionCount > 0) {
+
+        const proceed =
+            confirm(
+                `This customer has ${transactionCount} transaction(s).\n\nDeleting the customer will also delete those transactions and related cheques.\n\nContinue?`
+            );
+
+        if (!proceed) {
+            return;
+        }
+
+    } else {
+
+        const proceed =
+            confirm(
+                `Delete ${customer.name}?`
+            );
+
+        if (!proceed) {
+            return;
+        }
+    }
+
+    state.customers =
+        state.customers.filter(
+            customer =>
+                customer.id !==
+                customerId
+        );
+
+    state.transactions =
+        state.transactions.filter(
+            transaction =>
+                transaction.customerId !==
+                customerId
+        );
+
+    state.cheques =
+        state.cheques.filter(
+            cheque =>
+                cheque.customerId !==
+                customerId
+        );
+
+    save();
+
+    currentCustomerId =
+        null;
+
+    toast(
+        "Customer deleted.",
+        "success"
     );
 
-
-    setupTransactionForm();
+    render();
 }
-
 
 /* =========================================================
    TRANSACTION FORM
 ========================================================= */
 
-function transactionFormHTML(
-    customerId
+function openTransactionForm(
+    transactionId = null,
+    customerId = null
 ) {
 
-    return `
+    editingTransactionId =
+        transactionId;
 
-        <form id="transactionForm">
+    const transaction =
+        transactionId
+            ? state.transactions.find(
+                item =>
+                    item.id ===
+                    transactionId
+              )
+            : null;
 
-            <div class="form-group">
+    const selectedCustomer =
+        customerId ||
+        transaction?.customerId ||
+        currentCustomerId ||
+        "";
 
-                <label class="form-label">
-                    Customer
-                    <span class="required">*</span>
-                </label>
+    const customers =
+        state.customers;
 
-                <select
-                    class="form-control"
-                    id="transactionCustomer"
-                    required
-                >
+    openModal(`
 
-                    <option value="">
-                        Select customer
-                    </option>
+        <div class="modal-header">
 
-                    ${appData.customers
-                        .map(
-                            customer =>
-                                `
+            <h2>
+                ${
+                    transaction
+                        ? "✏️ Edit Transaction"
+                        : "➕ Add Transaction"
+                }
+            </h2>
+
+            <button
+                class="modal-close"
+                onclick="closeModal()"
+            >
+                ×
+            </button>
+
+        </div>
+
+        <form
+            id="transactionForm"
+            onsubmit="saveTransaction(event)"
+        >
+
+            <div class="form-grid">
+
+                <div class="form-group full">
+
+                    <label>Customer *</label>
+
+                    <select
+                        id="transactionCustomer"
+                        required
+                    >
+
+                        <option value="">
+                            Select customer
+                        </option>
+
+                        ${customers.map(
+                            customer => `
                                 <option
                                     value="${customer.id}"
                                     ${
                                         customer.id ===
-                                        customerId
+                                        selectedCustomer
                                             ? "selected"
                                             : ""
                                     }
@@ -1650,298 +1131,397 @@ function transactionFormHTML(
                                         customer.name
                                     )}
                                 </option>
-                                `
-                        )
-                        .join("")
-                    }
+                            `
+                        ).join("")}
 
-                </select>
-
-            </div>
-
-
-            <div class="form-section">
-
-                <div class="form-section-title">
-                    Transaction Type
-                </div>
-
-
-                <div class="transaction-types">
-
-                    ${transactionTypeButton(
-                        "purchase",
-                        "▤",
-                        "Credit Purchase",
-                        "Amount added to account"
-                    )}
-
-                    ${transactionTypeButton(
-                        "payment",
-                        "↓",
-                        "Payment",
-                        "Amount paid / received"
-                    )}
-
-                    ${transactionTypeButton(
-                        "debit",
-                        "+",
-                        "Debit Adjustment",
-                        "Increase balance"
-                    )}
-
-                    ${transactionTypeButton(
-                        "credit",
-                        "−",
-                        "Credit Adjustment",
-                        "Reduce balance"
-                    )}
+                    </select>
 
                 </div>
-
-                <input
-                    type="hidden"
-                    id="transactionType"
-                    value="purchase"
-                >
-
-            </div>
-
-
-            <div class="form-grid"
-                 style="margin-top:18px;">
 
                 <div class="form-group">
 
-                    <label class="form-label">
-                        Date
-                        <span class="required">*</span>
-                    </label>
+                    <label>Date *</label>
 
                     <input
-                        class="form-control"
                         id="transactionDate"
                         type="date"
-                        value="${todayISO()}"
                         required
+                        value="${
+                            transaction?.date ||
+                            today()
+                        }"
                     >
 
                 </div>
-
 
                 <div class="form-group">
 
-                    <label class="form-label">
-                        Amount (AED)
-                        <span class="required">*</span>
-                    </label>
+                    <label>Transaction Type *</label>
+
+                    <select
+                        id="transactionType"
+                        onchange="transactionTypeChanged()"
+                        required
+                    >
+
+                        <option
+                            value="creditPurchase"
+                            ${
+                                transaction?.type ===
+                                "creditPurchase"
+                                    ? "selected"
+                                    : ""
+                            }
+                        >
+                            🟢 Credit Purchase
+                            (Receivable)
+                        </option>
+
+                        <option
+                            value="paymentReceived"
+                            ${
+                                transaction?.type ===
+                                "paymentReceived"
+                                    ? "selected"
+                                    : ""
+                            }
+                        >
+                            🟢 Payment Received
+                            (Receivable)
+                        </option>
+
+                        <option
+                            value="advanceReceived"
+                            ${
+                                transaction?.type ===
+                                "advanceReceived"
+                                    ? "selected"
+                                    : ""
+                            }
+                        >
+                            🔴 Advance Received
+                            (Payable)
+                        </option>
+
+                        <option
+                            value="paymentMade"
+                            ${
+                                transaction?.type ===
+                                "paymentMade"
+                                    ? "selected"
+                                    : ""
+                            }
+                        >
+                            🔴 Payment Made
+                            (Payable)
+                        </option>
+
+                        <option
+                            value="debitAdjustment"
+                            ${
+                                transaction?.type ===
+                                "debitAdjustment"
+                                    ? "selected"
+                                    : ""
+                            }
+                        >
+                            🟢 Debit Adjustment
+                            (Receivable)
+                        </option>
+
+                        <option
+                            value="creditAdjustment"
+                            ${
+                                transaction?.type ===
+                                "creditAdjustment"
+                                    ? "selected"
+                                    : ""
+                            }
+                        >
+                            🔴 Credit Adjustment
+                            (Payable)
+                        </option>
+
+                    </select>
+
+                </div>
+
+                <div class="form-group">
+
+                    <label>Amount *</label>
 
                     <input
-                        class="form-control"
                         id="transactionAmount"
                         type="number"
-                        min="0.01"
                         step="0.01"
+                        min="0.01"
                         required
-                        placeholder="0.00"
+                        value="${
+                            transaction
+                                ? number(
+                                    transaction.amount
+                                  )
+                                : ""
+                        }"
                     >
 
                 </div>
 
+                <div
+                    class="form-group"
+                    id="paymentMethodGroup"
+                >
+
+                    <label>Payment Method</label>
+
+                    <select
+                        id="paymentMethod"
+                        onchange="paymentMethodChanged()"
+                    >
+
+                        <option value="">
+                            Select method
+                        </option>
+
+                        <option
+                            value="Cash"
+                            ${
+                                transaction?.paymentMethod ===
+                                "Cash"
+                                    ? "selected"
+                                    : ""
+                            }
+                        >
+                            Cash
+                        </option>
+
+                        <option
+                            value="Cheque"
+                            ${
+                                transaction?.paymentMethod ===
+                                "Cheque"
+                                    ? "selected"
+                                    : ""
+                            }
+                        >
+                            Cheque
+                        </option>
+
+                        <option
+                            value="Bank Transfer"
+                            ${
+                                transaction?.paymentMethod ===
+                                "Bank Transfer"
+                                    ? "selected"
+                                    : ""
+                            }
+                        >
+                            Bank Transfer
+                        </option>
+
+                        <option
+                            value="BOTIM Transfer"
+                            ${
+                                transaction?.paymentMethod ===
+                                "BOTIM Transfer"
+                                    ? "selected"
+                                    : ""
+                            }
+                        >
+                            BOTIM Transfer
+                        </option>
+
+                        <option
+                            value="Other"
+                            ${
+                                transaction?.paymentMethod ===
+                                "Other"
+                                    ? "selected"
+                                    : ""
+                            }
+                        >
+                            Other
+                        </option>
+
+                    </select>
+
+                </div>
+
+                <div class="form-group">
+
+                    <label>Reference</label>
+
+                    <input
+                        id="transactionReference"
+                        value="${escapeHTML(
+                            transaction?.reference ||
+                            ""
+                        )}"
+                    >
+
+                </div>
 
                 <div class="form-group full">
 
-                    <label class="form-label">
-                        Description
-                        <span class="required">*</span>
-                    </label>
+                    <label>Description / Notes</label>
 
-                    <input
-                        class="form-control"
+                    <textarea
                         id="transactionDescription"
-                        required
-                        placeholder="e.g. Tent rental, invoice payment, advance..."
-                    >
+                    >${escapeHTML(
+                        transaction?.description ||
+                        ""
+                    )}</textarea>
 
                 </div>
 
             </div>
 
+            <div
+                id="transactionDirectionPreview"
+                class="direction-preview"
+            ></div>
 
-            <div id="paymentDetails">
+            <div
+                id="chequeFields"
+                style="display:none"
+            >
 
-                <div class="form-section">
+                <h3>🧾 Cheque Details</h3>
 
-                    <div class="form-section-title">
-                        Payment Details
-                    </div>
-
+                <div class="form-grid">
 
                     <div class="form-group">
 
-                        <label class="form-label">
-                            Payment Method
-                        </label>
+                        <label>Cheque Number</label>
 
-                        <select
-                            class="form-control"
-                            id="paymentMethod"
+                        <input
+                            id="chequeNumber"
+                            value="${escapeHTML(
+                                transaction?.chequeNumber ||
+                                ""
+                            )}"
                         >
 
-                            <option value="Cash">
-                                Cash
-                            </option>
+                    </div>
 
-                            <option value="Cheque">
-                                Cheque
-                            </option>
+                    <div class="form-group">
 
-                            <option value="Bank Transfer">
-                                Bank Transfer
-                            </option>
+                        <label>Cheque Date</label>
 
-                            <option value="BOTIM Transfer">
-                                BOTIM Transfer
-                            </option>
+                        <input
+                            id="chequeDate"
+                            type="date"
+                            value="${
+                                transaction?.chequeDate ||
+                                ""
+                            }"
+                        >
 
-                            <option value="Other">
-                                Other
-                            </option>
+                    </div>
+
+                    <div class="form-group">
+
+                        <label>Expected Clearance Date</label>
+
+                        <input
+                            id="clearanceDate"
+                            type="date"
+                            value="${
+                                transaction?.clearanceDate ||
+                                ""
+                            }"
+                        >
+
+                    </div>
+
+                    <div class="form-group">
+
+                        <label>Bank Name</label>
+
+                        <input
+                            id="chequeBank"
+                            value="${escapeHTML(
+                                transaction?.chequeBank ||
+                                ""
+                            )}"
+                        >
+
+                    </div>
+
+                    <div class="form-group">
+
+                        <label>Account / Drawer</label>
+
+                        <input
+                            id="chequeDrawer"
+                            value="${escapeHTML(
+                                transaction?.chequeDrawer ||
+                                ""
+                            )}"
+                        >
+
+                    </div>
+
+                    <div class="form-group">
+
+                        <label>Payee</label>
+
+                        <input
+                            id="chequePayee"
+                            value="${escapeHTML(
+                                transaction?.chequePayee ||
+                                ""
+                            )}"
+                        >
+
+                    </div>
+
+                    <div class="form-group">
+
+                        <label>Cheque Status</label>
+
+                        <select id="chequeStatus">
+
+                            ${[
+                                "Issued",
+                                "Deposited",
+                                "Cleared",
+                                "Returned/Bounced",
+                                "Cancelled"
+                            ].map(
+                                status => `
+                                    <option
+                                        value="${status}"
+                                        ${
+                                            (
+                                                transaction?.chequeStatus ||
+                                                "Issued"
+                                            ) === status
+                                                ? "selected"
+                                                : ""
+                                        }
+                                    >
+                                        ${status}
+                                    </option>
+                                `
+                            ).join("")}
 
                         </select>
 
                     </div>
 
+                    <div class="form-group">
 
-                    <div
-                        id="chequeDetails"
-                        class="cheque-panel hidden"
-                    >
+                        <label>Actual Clearing Date</label>
 
-                        <div class="cheque-panel-title">
-                            ▭ Cheque Details
-                        </div>
-
-
-                        <div class="form-grid">
-
-                            <div class="form-group">
-
-                                <label class="form-label">
-                                    Cheque Number
-                                    <span class="required">*</span>
-                                </label>
-
-                                <input
-                                    class="form-control"
-                                    id="chequeNumber"
-                                    placeholder="Cheque number"
-                                >
-
-                            </div>
-
-
-                            <div class="form-group">
-
-                                <label class="form-label">
-                                    Bank Name
-                                </label>
-
-                                <input
-                                    class="form-control"
-                                    id="chequeBank"
-                                    placeholder="Bank name"
-                                >
-
-                            </div>
-
-
-                            <div class="form-group">
-
-                                <label class="form-label">
-                                    Cheque Date
-                                </label>
-
-                                <input
-                                    class="form-control"
-                                    id="chequeDate"
-                                    type="date"
-                                    value="${todayISO()}"
-                                >
-
-                            </div>
-
-
-                            <div class="form-group">
-
-                                <label class="form-label">
-                                    Expected Clearance
-                                </label>
-
-                                <input
-                                    class="form-control"
-                                    id="chequeClearanceDate"
-                                    type="date"
-                                >
-
-                                <div class="form-help">
-                                    The app will alert you 5 days before this date.
-                                </div>
-
-                            </div>
-
-
-                            <div class="form-group">
-
-                                <label class="form-label">
-                                    Drawer / Account Name
-                                </label>
-
-                                <input
-                                    class="form-control"
-                                    id="chequeDrawer"
-                                    placeholder="Name on cheque"
-                                >
-
-                            </div>
-
-
-                            <div class="form-group">
-
-                                <label class="form-label">
-                                    Cheque Status
-                                </label>
-
-                                <select
-                                    class="form-control"
-                                    id="chequeStatus"
-                                >
-
-                                    <option value="Issued">
-                                        Issued
-                                    </option>
-
-                                    <option value="Deposited">
-                                        Deposited
-                                    </option>
-
-                                    <option value="Cleared">
-                                        Cleared
-                                    </option>
-
-                                    <option value="Returned/Bounced">
-                                        Returned / Bounced
-                                    </option>
-
-                                    <option value="Cancelled">
-                                        Cancelled
-                                    </option>
-
-                                </select>
-
-                            </div>
-
-                        </div>
+                        <input
+                            id="actualClearingDate"
+                            type="date"
+                            value="${
+                                transaction?.actualClearingDate ||
+                                ""
+                            }"
+                        >
 
                     </div>
 
@@ -1949,222 +1529,126 @@ function transactionFormHTML(
 
             </div>
 
-
-            <div class="form-group"
-                 style="margin-top:18px;">
-
-                <label class="form-label">
-                    Reference / Notes
-                </label>
-
-                <textarea
-                    class="form-control"
-                    id="transactionNotes"
-                    placeholder="Invoice number, receipt number, additional notes..."
-                ></textarea>
-
-            </div>
-
-
-            <div class="modal-footer">
+            <div class="modal-actions">
 
                 <button
                     type="button"
-                    class="secondary-button"
-                    id="cancelTransaction"
+                    class="btn secondary"
+                    onclick="closeModal()"
                 >
                     Cancel
                 </button>
 
                 <button
                     type="submit"
-                    class="primary-button"
+                    class="btn primary"
                 >
-                    Save Transaction
+                    💾 Save Transaction
                 </button>
 
             </div>
 
         </form>
-    `;
+    `);
+
+    transactionTypeChanged();
+    paymentMethodChanged();
 }
 
-
 /* =========================================================
-   TRANSACTION TYPE BUTTON
+   TRANSACTION TYPE CHANGED
 ========================================================= */
 
-function transactionTypeButton(
-    type,
-    icon,
-    title,
-    description
-) {
-
-    return `
-
-        <button
-            type="button"
-            class="transaction-type ${
-                type === "purchase"
-                    ? "selected"
-                    : ""
-            }"
-            data-transaction-type="${type}"
-        >
-
-            <div class="transaction-type-icon">
-                ${icon}
-            </div>
-
-            <div class="transaction-type-title">
-                ${escapeHTML(title)}
-            </div>
-
-            <div class="transaction-type-description">
-                ${escapeHTML(description)}
-            </div>
-
-        </button>
-    `;
-}
-
-
-/* =========================================================
-   SETUP TRANSACTION FORM
-========================================================= */
-
-function setupTransactionForm() {
-
-    document
-        .querySelectorAll(
-            "[data-transaction-type]"
-        )
-        .forEach(button => {
-
-            button.addEventListener(
-                "click",
-                () => {
-
-                    document
-                        .querySelectorAll(
-                            "[data-transaction-type]"
-                        )
-                        .forEach(
-                            item =>
-                                item.classList.remove(
-                                    "selected"
-                                )
-                        );
-
-                    button.classList.add(
-                        "selected"
-                    );
-
-                    document
-                        .getElementById(
-                            "transactionType"
-                        )
-                        .value =
-                        button.dataset
-                            .transactionType;
-
-                    updatePaymentVisibility();
-                }
-            );
-        });
-
-
-    document
-        .getElementById("paymentMethod")
-        ?.addEventListener(
-            "change",
-            updateChequeVisibility
-        );
-
-
-    document
-        .getElementById("transactionForm")
-        ?.addEventListener(
-            "submit",
-            saveTransaction
-        );
-
-
-    document
-        .getElementById("cancelTransaction")
-        ?.addEventListener(
-            "click",
-            closeModal
-        );
-
-
-    updatePaymentVisibility();
-}
-
-
-/* =========================================================
-   PAYMENT VISIBILITY
-========================================================= */
-
-function updatePaymentVisibility() {
+function transactionTypeChanged() {
 
     const type =
-        document.getElementById(
-            "transactionType"
-        )?.value;
+        $("transactionType");
 
-    const paymentDetails =
-        document.getElementById(
-            "paymentDetails"
+    if (!type) {
+        return;
+    }
+
+    const config =
+        getTransactionType(
+            type.value
         );
 
-    if (!paymentDetails) return;
+    const preview =
+        $("transactionDirectionPreview");
 
-    paymentDetails.classList.toggle(
-        "hidden",
-        type !== "payment"
-    );
+    if (preview) {
 
+        if (
+            config.direction ===
+            PAYABLE
+        ) {
 
-    if (type !== "payment") {
+            preview.innerHTML = `
+                <strong>🔴 PAYABLE</strong>
+                <span>
+                    This transaction represents
+                    money Al Jefoon owes.
+                </span>
+            `;
 
-        const chequeDetails =
-            document.getElementById(
-                "chequeDetails"
-            );
+            preview.className =
+                "direction-preview payable";
 
-        chequeDetails?.classList.add(
-            "hidden"
-        );
+        } else {
+
+            preview.innerHTML = `
+                <strong>🟢 RECEIVABLE</strong>
+                <span>
+                    This transaction represents
+                    money the customer owes Al Jefoon.
+                </span>
+            `;
+
+            preview.className =
+                "direction-preview receivable";
+        }
+    }
+
+    const paymentGroup =
+        $("paymentMethodGroup");
+
+    if (paymentGroup) {
+
+        const paymentTypes = [
+            "paymentReceived",
+            "paymentMade"
+        ];
+
+        paymentGroup.style.display =
+            paymentTypes.includes(
+                type.value
+            )
+                ? ""
+                : "none";
     }
 }
 
-
 /* =========================================================
-   CHEQUE VISIBILITY
+   PAYMENT METHOD CHANGED
 ========================================================= */
 
-function updateChequeVisibility() {
+function paymentMethodChanged() {
 
     const method =
-        document.getElementById(
-            "paymentMethod"
-        )?.value;
+        $("paymentMethod");
 
-    const panel =
-        document.getElementById(
-            "chequeDetails"
-        );
+    const chequeFields =
+        $("chequeFields");
 
-    if (!panel) return;
+    if (!method || !chequeFields) {
+        return;
+    }
 
-    panel.classList.toggle(
-        "hidden",
-        method !== "Cheque"
-    );
+    chequeFields.style.display =
+        method.value === "Cheque"
+            ? ""
+            : "none";
 }
-
 
 /* =========================================================
    SAVE TRANSACTION
@@ -2175,369 +1659,1472 @@ function saveTransaction(event) {
     event.preventDefault();
 
     const customerId =
-        document.getElementById(
-            "transactionCustomer"
-        ).value;
+        $("transactionCustomer").value;
 
     const type =
-        document.getElementById(
-            "transactionType"
-        ).value;
+        $("transactionType").value;
 
     const amount =
-        Number(
-            document.getElementById(
-                "transactionAmount"
-            ).value
+        number(
+            $("transactionAmount").value
         );
-
-    const date =
-        document.getElementById(
-            "transactionDate"
-        ).value;
-
-    const description =
-        document.getElementById(
-            "transactionDescription"
-        ).value
-        .trim();
-
 
     if (!customerId) {
 
-        showToast(
+        toast(
             "Please select a customer.",
-            "!"
+            "error"
         );
 
         return;
     }
 
+    if (amount <= 0) {
 
-    if (
-        !amount ||
-        amount <= 0
-    ) {
-
-        showToast(
+        toast(
             "Please enter a valid amount.",
-            "!"
+            "error"
         );
 
         return;
     }
 
+    const config =
+        getTransactionType(type);
 
-    if (!date) {
-
-        showToast(
-            "Please select a date.",
-            "!"
-        );
-
-        return;
-    }
-
-
-    if (!description) {
-
-        showToast(
-            "Please enter a description.",
-            "!"
-        );
-
-        return;
-    }
-
-
-    const transaction = {
-
-        id:
-            makeId("transaction"),
+    const data = {
 
         customerId,
 
+        date:
+            $("transactionDate").value ||
+            today(),
+
         type,
+
+        direction:
+            config.direction,
 
         amount,
 
-        date,
-
-        description,
-
         paymentMethod:
-            type === "payment"
-                ? document.getElementById(
-                    "paymentMethod"
-                ).value
-                : "",
+            $("paymentMethod").value,
 
-        notes:
-            document.getElementById(
-                "transactionNotes"
-            ).value
-            .trim(),
+        reference:
+            $("transactionReference")
+                .value
+                .trim(),
 
-        createdAt:
-            new Date().toISOString()
+        description:
+            $("transactionDescription")
+                .value
+                .trim(),
+
+        chequeNumber:
+            $("chequeNumber")?.value.trim() ||
+            "",
+
+        chequeDate:
+            $("chequeDate")?.value ||
+            "",
+
+        clearanceDate:
+            $("clearanceDate")?.value ||
+            "",
+
+        chequeBank:
+            $("chequeBank")?.value.trim() ||
+            "",
+
+        chequeDrawer:
+            $("chequeDrawer")?.value.trim() ||
+            "",
+
+        chequePayee:
+            $("chequePayee")?.value.trim() ||
+            "",
+
+        chequeStatus:
+            $("chequeStatus")?.value ||
+            "",
+
+        actualClearingDate:
+            $("actualClearingDate")?.value ||
+            ""
     };
 
+    /* ---------------------------------------------
+       EDIT
+    --------------------------------------------- */
 
-    appData.transactions.push(
-        transaction
-    );
+    if (editingTransactionId) {
 
-
-    /* -----------------------------------------------------
-       CHEQUE
-    ----------------------------------------------------- */
-
-    if (
-        type === "payment" &&
-        transaction.paymentMethod ===
-            "Cheque"
-    ) {
-
-        const chequeNumber =
-            document.getElementById(
-                "chequeNumber"
-            ).value
-            .trim();
-
-
-        if (!chequeNumber) {
-
-            showToast(
-                "Please enter the cheque number.",
-                "!"
+        const transaction =
+            state.transactions.find(
+                item =>
+                    item.id ===
+                    editingTransactionId
             );
 
-            appData.transactions.pop();
+        if (transaction) {
 
-            return;
+            Object.assign(
+                transaction,
+                data,
+                {
+                    updatedAt:
+                        new Date().toISOString()
+                }
+            );
         }
 
-
-        const cheque = {
-
-            id:
-                makeId("cheque"),
-
-            transactionId:
-                transaction.id,
-
-            customerId,
-
-            amount,
-
-            chequeNumber,
-
-            bank:
-                document.getElementById(
-                    "chequeBank"
-                ).value
-                .trim(),
-
-            chequeDate:
-                document.getElementById(
-                    "chequeDate"
-                ).value,
-
-            clearanceDate:
-                document.getElementById(
-                    "chequeClearanceDate"
-                ).value,
-
-            drawer:
-                document.getElementById(
-                    "chequeDrawer"
-                ).value
-                .trim(),
-
-            status:
-                document.getElementById(
-                    "chequeStatus"
-                ).value,
-
-            createdAt:
-                new Date().toISOString()
-        };
-
-
-        appData.cheques.push(
-            cheque
+        syncChequeFromTransaction(
+            transaction
         );
-    }
 
-
-    saveData();
-
-    closeModal();
-
-    showToast(
-        "Transaction saved successfully."
-    );
-
-
-    if (
-        currentView === "customer" &&
-        selectedCustomerId === customerId
-    ) {
-
-        renderCustomerStatement(
-            customerId
+        toast(
+            "Transaction updated successfully."
         );
 
     } else {
 
-        renderView(
-            currentView
+        const transaction = {
+
+            id:
+                generateID("TRX"),
+
+            createdAt:
+                new Date().toISOString(),
+
+            ...data
+        };
+
+        state.transactions.push(
+            transaction
         );
+
+        syncChequeFromTransaction(
+            transaction
+        );
+
+        toast(
+            "Transaction added successfully."
+        );
+    }
+
+    save();
+
+    closeModal();
+
+    render();
+}
+
+/* =========================================================
+   SYNC CHEQUE FROM TRANSACTION
+========================================================= */
+
+function syncChequeFromTransaction(
+    transaction
+) {
+
+    if (!transaction) {
+        return;
+    }
+
+    /*
+       Only create cheque record when
+       payment method is Cheque.
+    */
+
+    if (
+        transaction.paymentMethod !==
+        "Cheque"
+    ) {
+
+        state.cheques =
+            state.cheques.filter(
+                cheque =>
+                    cheque.transactionId !==
+                    transaction.id
+            );
+
+        return;
+    }
+
+    const existing =
+        state.cheques.find(
+            cheque =>
+                cheque.transactionId ===
+                transaction.id
+        );
+
+    const chequeData = {
+
+        transactionId:
+            transaction.id,
+
+        customerId:
+            transaction.customerId,
+
+        date:
+            transaction.chequeDate ||
+            transaction.date,
+
+        amount:
+            transaction.amount,
+
+        chequeNumber:
+            transaction.chequeNumber,
+
+        clearanceDate:
+            transaction.clearanceDate,
+
+        bank:
+            transaction.chequeBank,
+
+        drawer:
+            transaction.chequeDrawer,
+
+        payee:
+            transaction.chequePayee,
+
+        status:
+            transaction.chequeStatus ||
+            "Issued",
+
+        actualClearingDate:
+            transaction.actualClearingDate,
+
+        direction:
+            transaction.direction
+    };
+
+    if (existing) {
+
+        Object.assign(
+            existing,
+            chequeData,
+            {
+                updatedAt:
+                    new Date().toISOString()
+            }
+        );
+
+    } else {
+
+        state.cheques.push({
+
+            id:
+                generateID("CHQ"),
+
+            createdAt:
+                new Date().toISOString(),
+
+            ...chequeData
+        });
     }
 }
 
-
 /* =========================================================
-   STATEMENTS
+   EDIT TRANSACTION
 ========================================================= */
 
-function renderStatements() {
+function editTransaction(
+    transactionId
+) {
 
-    const customers =
-        appData.customers;
+    const transaction =
+        state.transactions.find(
+            item =>
+                item.id ===
+                transactionId
+        );
 
+    if (!transaction) {
 
-    appContent.innerHTML = `
+        toast(
+            "Transaction not found.",
+            "error"
+        );
 
-        <div class="page-header">
+        return;
+    }
 
-            <div>
+    openTransactionForm(
+        transactionId,
+        transaction.customerId
+    );
+}
 
-                <h1>Customer Statements</h1>
+/* =========================================================
+   DELETE TRANSACTION
+========================================================= */
 
-                <p>
-                    Select a customer to view the complete account statement.
-                </p>
+function deleteTransaction(
+    transactionId
+) {
+
+    const transaction =
+        state.transactions.find(
+            item =>
+                item.id ===
+                transactionId
+        );
+
+    if (!transaction) {
+        return;
+    }
+
+    const type =
+        getTransactionType(
+            transaction.type
+        );
+
+    const customer =
+        customerName(
+            transaction.customerId
+        );
+
+    const confirmed =
+        confirm(
+            `Delete this transaction?\n\n` +
+            `Customer: ${customer}\n` +
+            `Type: ${type.label}\n` +
+            `Amount: ${money(transaction.amount)}\n\n` +
+            `This will change the customer's balance.`
+        );
+
+    if (!confirmed) {
+        return;
+    }
+
+    state.transactions =
+        state.transactions.filter(
+            item =>
+                item.id !==
+                transactionId
+        );
+
+    state.cheques =
+        state.cheques.filter(
+            cheque =>
+                cheque.transactionId !==
+                transactionId
+        );
+
+    save();
+
+    toast(
+        "Transaction deleted."
+    );
+
+    render();
+}
+
+/* =========================================================
+   EDIT CHEQUE
+========================================================= */
+
+function editCheque(
+    chequeId
+) {
+
+    const cheque =
+        state.cheques.find(
+            item =>
+                item.id ===
+                chequeId
+        );
+
+    if (!cheque) {
+        return;
+    }
+
+    const transaction =
+        state.transactions.find(
+            item =>
+                item.id ===
+                cheque.transactionId
+        );
+
+    if (transaction) {
+
+        openTransactionForm(
+            transaction.id,
+            transaction.customerId
+        );
+
+        return;
+    }
+
+    openChequeForm(
+        chequeId
+    );
+}
+
+/* =========================================================
+   CHEQUE FORM
+========================================================= */
+
+function openChequeForm(
+    chequeId = null
+) {
+
+    editingChequeId =
+        chequeId;
+
+    const cheque =
+        chequeId
+            ? state.cheques.find(
+                item =>
+                    item.id ===
+                    chequeId
+              )
+            : null;
+
+    openModal(`
+
+        <div class="modal-header">
+
+            <h2>
+                ${
+                    cheque
+                        ? "✏️ Edit Cheque"
+                        : "🧾 Add Cheque"
+                }
+            </h2>
+
+            <button
+                class="modal-close"
+                onclick="closeModal()"
+            >
+                ×
+            </button>
+
+        </div>
+
+        <form
+            onsubmit="saveStandaloneCheque(event)"
+        >
+
+            <div class="form-grid">
+
+                <div class="form-group">
+
+                    <label>Customer</label>
+
+                    <select
+                        id="chequeCustomer"
+                        required
+                    >
+
+                        <option value="">
+                            Select customer
+                        </option>
+
+                        ${state.customers.map(
+                            customer => `
+                                <option
+                                    value="${customer.id}"
+                                    ${
+                                        customer.id ===
+                                        cheque?.customerId
+                                            ? "selected"
+                                            : ""
+                                    }
+                                >
+                                    ${escapeHTML(
+                                        customer.name
+                                    )}
+                                </option>
+                            `
+                        ).join("")}
+
+                    </select>
+
+                </div>
+
+                <div class="form-group">
+
+                    <label>Direction</label>
+
+                    <select id="standaloneChequeDirection">
+
+                        <option
+                            value="receivable"
+                            ${
+                                (
+                                    cheque?.direction ||
+                                    RECEIVABLE
+                                ) === RECEIVABLE
+                                    ? "selected"
+                                    : ""
+                            }
+                        >
+                            🟢 Receivable
+                            - Cheque Received
+                        </option>
+
+                        <option
+                            value="payable"
+                            ${
+                                cheque?.direction ===
+                                PAYABLE
+                                    ? "selected"
+                                    : ""
+                            }
+                        >
+                            🔴 Payable
+                            - Cheque Issued
+                        </option>
+
+                    </select>
+
+                </div>
+
+                <div class="form-group">
+
+                    <label>Amount</label>
+
+                    <input
+                        id="standaloneChequeAmount"
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        required
+                        value="${
+                            cheque
+                                ? number(
+                                    cheque.amount
+                                  )
+                                : ""
+                        }"
+                    >
+
+                </div>
+
+                <div class="form-group">
+
+                    <label>Cheque Number</label>
+
+                    <input
+                        id="standaloneChequeNumber"
+                        value="${escapeHTML(
+                            cheque?.chequeNumber ||
+                            ""
+                        )}"
+                    >
+
+                </div>
+
+                <div class="form-group">
+
+                    <label>Cheque Date</label>
+
+                    <input
+                        id="standaloneChequeDate"
+                        type="date"
+                        value="${
+                            cheque?.date ||
+                            ""
+                        }"
+                    >
+
+                </div>
+
+                <div class="form-group">
+
+                    <label>Expected Clearance Date</label>
+
+                    <input
+                        id="standaloneClearanceDate"
+                        type="date"
+                        value="${
+                            cheque?.clearanceDate ||
+                            ""
+                        }"
+                    >
+
+                </div>
+
+                <div class="form-group">
+
+                    <label>Bank</label>
+
+                    <input
+                        id="standaloneChequeBank"
+                        value="${escapeHTML(
+                            cheque?.bank ||
+                            ""
+                        )}"
+                    >
+
+                </div>
+
+                <div class="form-group">
+
+                    <label>Account / Drawer</label>
+
+                    <input
+                        id="standaloneChequeDrawer"
+                        value="${escapeHTML(
+                            cheque?.drawer ||
+                            ""
+                        )}"
+                    >
+
+                </div>
+
+                <div class="form-group">
+
+                    <label>Payee</label>
+
+                    <input
+                        id="standaloneChequePayee"
+                        value="${escapeHTML(
+                            cheque?.payee ||
+                            ""
+                        )}"
+                    >
+
+                </div>
+
+                <div class="form-group">
+
+                    <label>Status</label>
+
+                    <select id="standaloneChequeStatus">
+
+                        ${[
+                            "Issued",
+                            "Deposited",
+                            "Cleared",
+                            "Returned/Bounced",
+                            "Cancelled"
+                        ].map(
+                            status => `
+                                <option
+                                    value="${status}"
+                                    ${
+                                        (
+                                            cheque?.status ||
+                                            "Issued"
+                                        ) === status
+                                            ? "selected"
+                                            : ""
+                                    }
+                                >
+                                    ${status}
+                                </option>
+                            `
+                        ).join("")}
+
+                    </select>
+
+                </div>
+
+                <div class="form-group">
+
+                    <label>Actual Clearing Date</label>
+
+                    <input
+                        id="standaloneActualClearingDate"
+                        type="date"
+                        value="${
+                            cheque?.actualClearingDate ||
+                            ""
+                        }"
+                    >
+
+                </div>
 
             </div>
 
-            <div class="page-header-actions">
+            <div class="modal-actions">
 
                 <button
-                    class="primary-button"
-                    id="statementPrintButton"
+                    type="button"
+                    class="btn secondary"
+                    onclick="closeModal()"
                 >
-                    ⎙ Print Statements
+                    Cancel
+                </button>
+
+                <button
+                    type="submit"
+                    class="btn primary"
+                >
+                    💾 Save Cheque
                 </button>
 
             </div>
 
+        </form>
+    `);
+}
+
+/* =========================================================
+   SAVE STANDALONE CHEQUE
+========================================================= */
+
+function saveStandaloneCheque(event) {
+
+    event.preventDefault();
+
+    const data = {
+
+        customerId:
+            $("chequeCustomer").value,
+
+        direction:
+            $("standaloneChequeDirection").value,
+
+        amount:
+            number(
+                $("standaloneChequeAmount").value
+            ),
+
+        chequeNumber:
+            $("standaloneChequeNumber")
+                .value
+                .trim(),
+
+        date:
+            $("standaloneChequeDate").value,
+
+        clearanceDate:
+            $("standaloneClearanceDate").value,
+
+        bank:
+            $("standaloneChequeBank")
+                .value
+                .trim(),
+
+        drawer:
+            $("standaloneChequeDrawer")
+                .value
+                .trim(),
+
+        payee:
+            $("standaloneChequePayee")
+                .value
+                .trim(),
+
+        status:
+            $("standaloneChequeStatus").value,
+
+        actualClearingDate:
+            $("standaloneActualClearingDate")
+                .value
+    };
+
+    if (!data.customerId) {
+
+        toast(
+            "Please select a customer.",
+            "error"
+        );
+
+        return;
+    }
+
+    if (data.amount <= 0) {
+
+        toast(
+            "Please enter a valid amount.",
+            "error"
+        );
+
+        return;
+    }
+
+    if (editingChequeId) {
+
+        const cheque =
+            state.cheques.find(
+                item =>
+                    item.id ===
+                    editingChequeId
+            );
+
+        if (cheque) {
+
+            Object.assign(
+                cheque,
+                data
+            );
+        }
+
+        toast(
+            "Cheque updated successfully."
+        );
+
+    } else {
+
+        state.cheques.push({
+
+            id:
+                generateID("CHQ"),
+
+            createdAt:
+                new Date().toISOString(),
+
+            ...data
+        });
+
+        toast(
+            "Cheque added successfully."
+        );
+    }
+
+    save();
+
+    closeModal();
+
+    render();
+}
+
+/* =========================================================
+   DELETE CHEQUE
+========================================================= */
+
+function deleteCheque(
+    chequeId
+) {
+
+    const cheque =
+        state.cheques.find(
+            item =>
+                item.id ===
+                chequeId
+        );
+
+    if (!cheque) {
+        return;
+    }
+
+    const confirmed =
+        confirm(
+            `Delete cheque ${cheque.chequeNumber || ""}?\n\n` +
+            `Amount: ${money(cheque.amount)}\n` +
+            `Customer: ${customerName(
+                cheque.customerId
+            )}`
+        );
+
+    if (!confirmed) {
+        return;
+    }
+
+    /*
+       If cheque belongs to a transaction,
+       remove the cheque details from that
+       transaction but DO NOT delete the
+       transaction itself.
+    */
+
+    if (cheque.transactionId) {
+
+        const transaction =
+            state.transactions.find(
+                item =>
+                    item.id ===
+                    cheque.transactionId
+            );
+
+        if (transaction) {
+
+            transaction.paymentMethod =
+                "";
+
+            transaction.chequeNumber =
+                "";
+
+            transaction.chequeDate =
+                "";
+
+            transaction.clearanceDate =
+                "";
+
+            transaction.chequeBank =
+                "";
+
+            transaction.chequeDrawer =
+                "";
+
+            transaction.chequePayee =
+                "";
+
+            transaction.chequeStatus =
+                "";
+
+            transaction.actualClearingDate =
+                "";
+        }
+    }
+
+    state.cheques =
+        state.cheques.filter(
+            item =>
+                item.id !==
+                chequeId
+        );
+
+    save();
+
+    toast(
+        "Cheque deleted."
+    );
+
+    render();
+}
+
+/* =========================================================
+   DASHBOARD
+========================================================= */
+
+function renderDashboard() {
+
+    const customers =
+        state.customers;
+
+    let totalReceivable = 0;
+    let totalPayable = 0;
+
+    customers.forEach(
+        customer => {
+
+            const totals =
+                getCustomerTotals(
+                    customer.id
+                );
+
+            totalReceivable +=
+                totals.receivable;
+
+            totalPayable +=
+                totals.payable;
+        }
+    );
+
+    const pendingCheques =
+        state.cheques.filter(
+            cheque =>
+                cheque.status ===
+                    "Issued" ||
+                cheque.status ===
+                    "Deposited"
+        );
+
+    const upcoming =
+        getUpcomingCheques();
+
+    return `
+
+        <div class="page-header">
+
+            <div>
+                <h1>Dashboard</h1>
+
+                <p>
+                    Customer accounts overview
+                </p>
+            </div>
+
+            <button
+                class="btn primary"
+                onclick="openTransactionForm()"
+            >
+                ➕ Add Transaction
+            </button>
+
         </div>
 
+        <div class="stats-grid">
 
-        <div class="card filter-bar">
+            <div class="stat-card receivable">
 
-            <div class="search-box">
+                <div class="stat-icon">
+                    🟢
+                </div>
 
-                <span class="search-icon">
-                    ⌕
-                </span>
+                <div>
+                    <span>
+                        Total Receivable
+                    </span>
 
-                <input
-                    id="statementSearch"
-                    type="search"
-                    placeholder="Search customer statements..."
-                >
+                    <strong>
+                        ${money(totalReceivable)}
+                    </strong>
+
+                    <small>
+                        Customers owe Al Jefoon
+                    </small>
+                </div>
+
+            </div>
+
+            <div class="stat-card payable">
+
+                <div class="stat-icon">
+                    🔴
+                </div>
+
+                <div>
+                    <span>
+                        Total Payable
+                    </span>
+
+                    <strong>
+                        ${money(totalPayable)}
+                    </strong>
+
+                    <small>
+                        Al Jefoon owes customers
+                    </small>
+                </div>
+
+            </div>
+
+            <div class="stat-card">
+
+                <div class="stat-icon">
+                    👥
+                </div>
+
+                <div>
+                    <span>
+                        Customers
+                    </span>
+
+                    <strong>
+                        ${customers.length}
+                    </strong>
+                </div>
+
+            </div>
+
+            <div class="stat-card">
+
+                <div class="stat-icon">
+                    🧾
+                </div>
+
+                <div>
+                    <span>
+                        Pending Cheques
+                    </span>
+
+                    <strong>
+                        ${pendingCheques.length}
+                    </strong>
+                </div>
 
             </div>
 
         </div>
 
+        <div class="dashboard-grid">
 
-        <div
-            id="statementCustomerGrid"
-            class="customer-grid"
-        >
+            <div class="card">
 
-            ${
-                customers.length
-                    ? customersHTML(customers)
-                    : emptyStateHTML(
-                        "No Customers",
-                        "Add customers before creating statements."
-                    )
-            }
+                <div class="card-header">
+
+                    <h2>
+                        Customer Balances
+                    </h2>
+
+                    <button
+                        class="btn small"
+                        onclick="navigate('customers')"
+                    >
+                        View All
+                    </button>
+
+                </div>
+
+                ${renderCustomerBalanceRows()}
+
+            </div>
+
+            <div class="card">
+
+                <div class="card-header">
+
+                    <h2>
+                        🔔 Cheque Alerts
+                    </h2>
+
+                    <button
+                        class="btn small"
+                        onclick="navigate('cheques')"
+                    >
+                        Cheque Register
+                    </button>
+
+                </div>
+
+                ${
+                    upcoming.length
+                        ? upcoming.map(
+                            cheque =>
+                                renderChequeAlert(
+                                    cheque
+                                )
+                          ).join("")
+                        : `
+                            <div class="empty-state">
+                                No cheques due within 5 days.
+                            </div>
+                        `
+                }
+
+            </div>
 
         </div>
     `;
-
-
-    document
-        .getElementById(
-            "statementPrintButton"
-        )
-        ?.addEventListener(
-            "click",
-            () => renderView("print")
-        );
-
-
-    document
-        .getElementById(
-            "statementSearch"
-        )
-        ?.addEventListener(
-            "input",
-            event => {
-
-                const query =
-                    event.target.value
-                        .toLowerCase()
-                        .trim();
-
-                const filtered =
-                    customers.filter(
-                        customer =>
-                            customer.name
-                                .toLowerCase()
-                                .includes(query)
-                    );
-
-                const grid =
-                    document.getElementById(
-                        "statementCustomerGrid"
-                    );
-
-                grid.innerHTML =
-                    filtered.length
-                        ? customersHTML(filtered)
-                        : emptyStateHTML(
-                            "No Matches",
-                            "No customer statements match your search."
-                        );
-
-                setupCustomerCardButtons();
-            }
-        );
-
-    setupCustomerCardButtons();
 }
-
 
 /* =========================================================
-   OPEN CUSTOMER STATEMENT
+   CUSTOMER BALANCE ROWS
 ========================================================= */
 
-function openCustomerStatement(
-    customerId
-) {
+function renderCustomerBalanceRows() {
 
-    selectedCustomerId =
-        customerId;
+    if (!state.customers.length) {
 
-    renderView("customer");
+        return `
+            <div class="empty-state">
+                No customers yet.
+            </div>
+        `;
+    }
+
+    return state.customers
+        .slice(0, 10)
+        .map(customer => {
+
+            const totals =
+                getCustomerTotals(
+                    customer.id
+                );
+
+            let status = "";
+
+            if (
+                totals.receivable >
+                0.009
+            ) {
+
+                status = `
+                    <span class="balance-badge receivable">
+                        🟢 Receivable
+                    </span>
+                `;
+
+            } else if (
+                totals.payable >
+                0.009
+            ) {
+
+                status = `
+                    <span class="balance-badge payable">
+                        🔴 Payable
+                    </span>
+                `;
+
+            } else {
+
+                status = `
+                    <span class="balance-badge settled">
+                        ✓ Settled
+                    </span>
+                `;
+            }
+
+            return `
+
+                <div
+                    class="customer-balance-row"
+                    onclick="openCustomer('${customer.id}')"
+                >
+
+                    <div>
+
+                        <strong>
+                            ${escapeHTML(
+                                customer.name
+                            )}
+                        </strong>
+
+                        <small>
+                            ${
+                                customer.company
+                                    ? escapeHTML(
+                                        customer.company
+                                      )
+                                    : ""
+                            }
+                        </small>
+
+                    </div>
+
+                    <div class="balance-values">
+
+                        ${status}
+
+                        ${
+                            totals.receivable
+                                ? `
+                                    <span class="receivable-text">
+                                        ${money(
+                                            totals.receivable
+                                        )}
+                                    </span>
+                                  `
+                                : ""
+                        }
+
+                        ${
+                            totals.payable
+                                ? `
+                                    <span class="payable-text">
+                                        ${money(
+                                            totals.payable
+                                        )}
+                                    </span>
+                                  `
+                                : ""
+                        }
+
+                    </div>
+
+                </div>
+            `;
+
+        })
+        .join("");
 }
 
+/* =========================================================
+   CUSTOMER LIST
+========================================================= */
+
+function renderCustomers() {
+
+    return `
+
+        <div class="page-header">
+
+            <div>
+                <h1>Customers</h1>
+
+                <p>
+                    Manage customer accounts
+                </p>
+            </div>
+
+            <button
+                class="btn primary"
+                onclick="openCustomerForm()"
+            >
+                ➕ Add Customer
+            </button>
+
+        </div>
+
+        <div class="card">
+
+            <div class="search-bar">
+
+                <input
+                    id="customerSearch"
+                    placeholder="🔎 Search customers..."
+                    oninput="filterCustomers()"
+                >
+
+            </div>
+
+            <div id="customerList">
+
+                ${renderCustomerCards()}
+
+            </div>
+
+        </div>
+    `;
+}
+
+/* =========================================================
+   CUSTOMER CARDS
+========================================================= */
+
+function renderCustomerCards(
+    search = ""
+) {
+
+    const term =
+        String(search)
+            .toLowerCase()
+            .trim();
+
+    const customers =
+        state.customers.filter(
+            customer =>
+                !term ||
+                String(
+                    customer.name
+                )
+                    .toLowerCase()
+                    .includes(term) ||
+                String(
+                    customer.company
+                )
+                    .toLowerCase()
+                    .includes(term) ||
+                String(
+                    customer.phone
+                )
+                    .toLowerCase()
+                    .includes(term)
+        );
+
+    if (!customers.length) {
+
+        return `
+            <div class="empty-state">
+                No customers found.
+            </div>
+        `;
+    }
+
+    return `
+        <div class="customer-grid">
+
+            ${customers.map(
+                customer => {
+
+                    const totals =
+                        getCustomerTotals(
+                            customer.id
+                        );
+
+                    return `
+
+                        <div class="customer-card">
+
+                            <div class="customer-card-top">
+
+                                <div class="customer-avatar">
+                                    👤
+                                </div>
+
+                                <div>
+
+                                    <h3>
+                                        ${escapeHTML(
+                                            customer.name
+                                        )}
+                                    </h3>
+
+                                    <p>
+                                        ${escapeHTML(
+                                            customer.company ||
+                                            ""
+                                        )}
+                                    </p>
+
+                                </div>
+
+                            </div>
+
+                            <div class="customer-financials">
+
+                                <div class="financial-item receivable">
+
+                                    <span>
+                                        🟢 Receivable
+                                    </span>
+
+                                    <strong>
+                                        ${money(
+                                            totals.receivable
+                                        )}
+                                    </strong>
+
+                                </div>
+
+                                <div class="financial-item payable">
+
+                                    <span>
+                                        🔴 Payable
+                                    </span>
+
+                                    <strong>
+                                        ${money(
+                                            totals.payable
+                                        )}
+                                    </strong>
+
+                                </div>
+
+                            </div>
+
+                            <div class="customer-actions">
+
+                                <button
+                                    class="btn small primary"
+                                    onclick="openCustomer('${customer.id}')"
+                                >
+                                    📒 Statement
+                                </button>
+
+                                <button
+                                    class="btn small"
+                                    onclick="openCustomerForm('${customer.id}')"
+                                >
+                                    ✏️ Edit
+                                </button>
+
+                                <button
+                                    class="btn small danger"
+                                    onclick="deleteCustomer('${customer.id}')"
+                                >
+                                    🗑️
+                                </button>
+
+                            </div>
+
+                        </div>
+                    `;
+                }
+            ).join("")}
+
+        </div>
+    `;
+}
+
+/* =========================================================
+   FILTER CUSTOMERS
+========================================================= */
+
+function filterCustomers() {
+
+    const search =
+        $("customerSearch")?.value ||
+        "";
+
+    const list =
+        $("customerList");
+
+    if (list) {
+
+        list.innerHTML =
+            renderCustomerCards(
+                search
+            );
+    }
+}
 
 /* =========================================================
    CUSTOMER STATEMENT
@@ -2550,56 +3137,26 @@ function renderCustomerStatement(
     const customer =
         getCustomer(customerId);
 
-
     if (!customer) {
 
-        renderView("customers");
-
-        return;
+        return `
+            <div class="empty-state">
+                Customer not found.
+            </div>
+        `;
     }
 
-
-    const transactions =
-        getCustomerTransactions(
+    const totals =
+        getCustomerTotals(
             customerId
         );
 
-
-    const balance =
-        getCustomerBalance(
+    const statement =
+        buildStatement(
             customerId
         );
 
-
-    const purchases =
-        transactions
-            .filter(
-                t =>
-                    t.type === "purchase" ||
-                    t.type === "debit"
-            )
-            .reduce(
-                (sum, t) =>
-                    sum + Number(t.amount || 0),
-                0
-            );
-
-
-    const payments =
-        transactions
-            .filter(
-                t =>
-                    t.type === "payment" ||
-                    t.type === "credit"
-            )
-            .reduce(
-                (sum, t) =>
-                    sum + Number(t.amount || 0),
-                0
-            );
-
-
-    appContent.innerHTML = `
+    return `
 
         <div class="page-header">
 
@@ -2607,852 +3164,542 @@ function renderCustomerStatement(
 
                 <button
                     class="back-button"
-                    id="statementBackButton"
+                    onclick="navigate('customers')"
                 >
-                    ← Back
+                    ← Back to Customers
                 </button>
+
+                <h1>
+                    ${escapeHTML(
+                        customer.name
+                    )}
+                </h1>
+
+                <p>
+                    Customer Statement
+                </p>
 
             </div>
 
-            <div class="page-header-actions">
+            <div class="header-actions">
 
                 <button
-                    class="secondary-button"
-                    id="statementAddEntry"
+                    class="btn"
+                    onclick="openCustomerForm('${customer.id}')"
                 >
-                    + Add Entry
+                    ✏️ Edit Customer
                 </button>
 
                 <button
-                    class="primary-button"
-                    id="statementPrintSingle"
+                    class="btn primary"
+                    onclick="openTransactionForm(null, '${customer.id}')"
                 >
-                    ⎙ Print
+                    ➕ Add Transaction
+                </button>
+
+                <button
+                    class="btn"
+                    onclick="printStatement('${customer.id}')"
+                >
+                    🖨️ Print
                 </button>
 
             </div>
 
         </div>
 
+        <div class="account-summary-grid">
 
-        <div class="card">
+            <div class="account-summary-card receivable">
 
-            <div class="statement-header">
+                <span>
+                    🟢 RECEIVABLE
+                </span>
+
+                <strong>
+                    ${money(
+                        totals.receivable
+                    )}
+                </strong>
+
+                <small>
+                    Customer owes Al Jefoon
+                </small>
+
+            </div>
+
+            <div class="account-summary-card payable">
+
+                <span>
+                    🔴 PAYABLE
+                </span>
+
+                <strong>
+                    ${money(
+                        totals.payable
+                    )}
+                </strong>
+
+                <small>
+                    Al Jefoon owes customer
+                </small>
+
+            </div>
+
+            <div class="account-summary-card">
+
+                <span>
+                    NET POSITION
+                </span>
+
+                <strong>
+
+                    ${
+                        totals.receivable >=
+                        totals.payable
+                            ? "🟢 " +
+                              money(
+                                  totals.receivable -
+                                  totals.payable
+                              )
+                            : "🔴 " +
+                              money(
+                                  totals.payable -
+                                  totals.receivable
+                              )
+                    }
+
+                </strong>
+
+                <small>
+
+                    ${
+                        totals.receivable >=
+                        totals.payable
+                            ? "Receivable"
+                            : "Payable"
+                    }
+
+                </small>
+
+            </div>
+
+        </div>
+
+        <div class="card statement-card">
+
+            <div class="card-header">
 
                 <div>
 
-                    <div class="statement-company">
-                        Al Jefoon Tents
-                    </div>
+                    <h2>
+                        Account Statement
+                    </h2>
 
-                    <div class="statement-title">
-                        Customer Account Statement
-                    </div>
-
-                </div>
-
-
-                <div class="statement-customer">
-
-                    <div class="statement-customer-name">
-                        ${escapeHTML(customer.name)}
-                    </div>
-
-                    <div class="statement-customer-info">
-
+                    <p>
                         ${
-                            customer.phone
+                            customer.company
                                 ? escapeHTML(
-                                    customer.phone
-                                )
-                                : ""
-                        }
-
-                        ${
-                            customer.email
-                                ? "<br>" +
-                                  escapeHTML(
-                                      customer.email
+                                    customer.company
                                   )
                                 : ""
                         }
+                    </p>
 
-                    </div>
+                </div>
+
+                <div class="statement-legend">
+
+                    <span>
+                        🟢 Receivable
+                    </span>
+
+                    <span>
+                        🔴 Payable
+                    </span>
 
                 </div>
 
             </div>
 
+            <div class="table-wrapper">
 
-            <div class="balance-grid">
+                <table class="data-table">
 
-                <div class="balance-box">
+                    <thead>
 
-                    <div class="balance-box-label">
-                        Opening Balance
-                    </div>
+                        <tr>
 
-                    <div class="balance-box-value">
-                        ${formatMoney(
-                            customer.openingBalance || 0
-                        )}
-                    </div>
+                            <th>Date</th>
 
-                </div>
+                            <th>Description</th>
 
+                            <th>Direction</th>
 
-                <div class="balance-box">
+                            <th>Reference</th>
 
-                    <div class="balance-box-label">
-                        Total Activity
-                    </div>
+                            <th>Amount</th>
 
-                    <div class="balance-box-value">
-                        ${formatMoney(
-                            purchases + payments
-                        )}
-                    </div>
+                            <th>Receivable</th>
 
-                </div>
+                            <th>Payable</th>
 
+                            <th>Actions</th>
 
-                <div class="balance-box">
+                        </tr>
 
-                    <div class="balance-box-label">
-                        Current Balance
-                    </div>
+                    </thead>
 
-                    <div
-                        class="balance-box-value ${
-                            balance > 0
-                                ? "amount positive"
-                                : balance < 0
-                                    ? "amount negative"
-                                    : ""
-                        }"
-                    >
-                        ${formatMoney(
-                            Math.abs(balance)
-                        )}
-                    </div>
+                    <tbody>
 
-                </div>
+                        ${statement.map(
+                            row =>
+                                renderStatementRow(
+                                    row
+                                )
+                        ).join("")}
 
-            </div>
+                    </tbody>
 
-
-            <div class="table-wrap">
-
-                ${
-                    transactions.length
-                        ? statementTableHTML(
-                            customer,
-                            transactions
-                        )
-                        : emptyStateHTML(
-                            "No Transactions",
-                            "There is no transaction activity for this customer yet."
-                        )
-                }
+                </table>
 
             </div>
 
         </div>
     `;
-
-
-    document
-        .getElementById(
-            "statementBackButton"
-        )
-        ?.addEventListener(
-            "click",
-            () => renderView("statements")
-        );
-
-
-    document
-        .getElementById(
-            "statementAddEntry"
-        )
-        ?.addEventListener(
-            "click",
-            () =>
-                openTransactionModal(
-                    customerId
-                )
-        );
-
-
-    document
-        .getElementById(
-            "statementPrintSingle"
-        )
-        ?.addEventListener(
-            "click",
-            () =>
-                printStatements(
-                    [customerId]
-                )
-        );
 }
 
-
 /* =========================================================
-   STATEMENT TABLE
+   STATEMENT ROW
 ========================================================= */
 
-function statementTableHTML(
-    customer,
-    transactions
+function renderStatementRow(
+    row
 ) {
 
-    let runningBalance =
-        Number(
-            customer.openingBalance || 0
-        );
+    const isOpening =
+        row.type === "opening";
 
+    const direction =
+        row.direction ||
+        RECEIVABLE;
 
-    let rows = `
+    const transactionId =
+        row.id;
 
-        <table class="data-table">
-
-            <thead>
-
-                <tr>
-
-                    <th>Date</th>
-                    <th>Description</th>
-                    <th>Method</th>
-                    <th>Debit</th>
-                    <th>Credit</th>
-                    <th>Balance</th>
-
-                </tr>
-
-            </thead>
-
-            <tbody>
-    `;
-
-
-    rows += `
+    return `
 
         <tr>
 
             <td>
-                ${formatDate(customer.createdAt)}
+                ${formatDate(
+                    row.date
+                )}
             </td>
 
             <td>
-                <strong>Opening Balance</strong>
-            </td>
 
-            <td>
-                <span class="badge badge-neutral">
-                    Opening
-                </span>
-            </td>
+                <strong>
+                    ${escapeHTML(
+                        row.description ||
+                        "Transaction"
+                    )}
+                </strong>
 
-            <td>
                 ${
-                    runningBalance > 0
-                        ? formatMoney(
-                            runningBalance
-                        )
-                        : "—"
+                    row.paymentMethod
+                        ? `
+                            <small class="table-sub">
+                                ${escapeHTML(
+                                    row.paymentMethod
+                                )}
+                            </small>
+                          `
+                        : ""
                 }
+
             </td>
 
             <td>
-                ${
-                    runningBalance < 0
-                        ? formatMoney(
-                            Math.abs(
-                                runningBalance
-                            )
-                        )
-                        : "—"
-                }
+
+                ${directionLabel(
+                    direction
+                )}
+
+            </td>
+
+            <td>
+                ${escapeHTML(
+                    row.reference ||
+                    "-"
+                )}
             </td>
 
             <td>
                 <strong>
-                    ${formatMoney(
-                        Math.abs(
-                            runningBalance
-                        )
+                    ${money(
+                        row.amount
                     )}
                 </strong>
             </td>
 
+            <td>
+
+                ${
+                    row.receivable !==
+                    undefined
+                        ? money(
+                            Math.max(
+                                0,
+                                row.receivable
+                            )
+                          )
+                        : "-"
+                }
+
+            </td>
+
+            <td>
+
+                ${
+                    row.payable !==
+                    undefined
+                        ? money(
+                            Math.max(
+                                0,
+                                row.payable
+                            )
+                          )
+                        : "-"
+                }
+
+            </td>
+
+            <td>
+
+                ${
+                    isOpening
+                        ? `
+                            <span class="muted">
+                                Opening
+                            </span>
+                          `
+                        : `
+                            <div class="row-actions">
+
+                                <button
+                                    class="icon-btn"
+                                    title="Edit"
+                                    onclick="editTransaction('${transactionId}')"
+                                >
+                                    ✏️
+                                </button>
+
+                                <button
+                                    class="icon-btn danger"
+                                    title="Delete"
+                                    onclick="deleteTransaction('${transactionId}')"
+                                >
+                                    🗑️
+                                </button>
+
+                            </div>
+                          `
+                }
+
+            </td>
+
         </tr>
     `;
-
-
-    const sorted =
-        [...transactions]
-            .sort(
-                (a, b) =>
-                    new Date(a.date) -
-                    new Date(b.date)
-            );
-
-
-    sorted.forEach(
-        transaction => {
-
-            const amount =
-                Number(
-                    transaction.amount || 0
-                );
-
-
-            const isDebit =
-                transaction.type ===
-                    "purchase" ||
-                transaction.type ===
-                    "debit";
-
-
-            if (isDebit) {
-
-                runningBalance += amount;
-
-            } else {
-
-                runningBalance -= amount;
-            }
-
-
-            rows += `
-
-                <tr>
-
-                    <td>
-                        ${formatDate(
-                            transaction.date
-                        )}
-                    </td>
-
-                    <td>
-
-                        <strong>
-                            ${escapeHTML(
-                                transaction.description
-                            )}
-                        </strong>
-
-                        ${
-                            transaction.notes
-                                ? `
-                                    <div
-                                        style="
-                                            margin-top:4px;
-                                            color:var(--muted);
-                                            font-size:10px;
-                                        "
-                                    >
-                                        ${escapeHTML(
-                                            transaction.notes
-                                        )}
-                                    </div>
-                                `
-                                : ""
-                        }
-
-                    </td>
-
-                    <td>
-                        ${
-                            transaction.paymentMethod
-                                ? `
-                                    <span class="badge badge-neutral">
-                                        ${escapeHTML(
-                                            transaction.paymentMethod
-                                        )}
-                                    </span>
-                                `
-                                : `
-                                    <span class="badge badge-gold">
-                                        ${
-                                            isDebit
-                                                ? "Purchase"
-                                                : "Adjustment"
-                                        }
-                                    </span>
-                                `
-                        }
-                    </td>
-
-                    <td>
-
-                        ${
-                            isDebit
-                                ? `
-                                    <span class="amount positive">
-                                        ${formatMoney(amount)}
-                                    </span>
-                                `
-                                : "—"
-                        }
-
-                    </td>
-
-                    <td>
-
-                        ${
-                            !isDebit
-                                ? `
-                                    <span class="amount negative">
-                                        ${formatMoney(amount)}
-                                    </span>
-                                `
-                                : "—"
-                        }
-
-                    </td>
-
-                    <td>
-
-                        <strong>
-                            ${formatMoney(
-                                Math.abs(
-                                    runningBalance
-                                )
-                            )}
-                        </strong>
-
-                    </td>
-
-                </tr>
-            `;
-        }
-    );
-
-
-    rows += `
-
-            </tbody>
-
-        </table>
-    `;
-
-    return rows;
 }
 
-
 /* =========================================================
-   TRANSACTIONS
+   TRANSACTIONS PAGE
 ========================================================= */
 
 function renderTransactions() {
 
     const transactions =
-        getFilteredTransactions();
+        [...state.transactions]
+            .sort(
+                (a, b) =>
+                    new Date(
+                        b.date || 0
+                    ) -
+                    new Date(
+                        a.date || 0
+                    )
+            );
 
-
-    appContent.innerHTML = `
+    return `
 
         <div class="page-header">
 
             <div>
 
-                <h1>Transactions</h1>
+                <h1>
+                    Transactions
+                </h1>
 
                 <p>
-                    View and manage all customer account entries.
+                    Receivables and payables
                 </p>
 
             </div>
 
-            <div class="page-header-actions">
-
-                <button
-                    class="primary-button"
-                    id="transactionAddButton"
-                >
-                    + Add Transaction
-                </button>
-
-            </div>
-
-        </div>
-
-
-        <div class="card filter-bar">
-
-            <div class="search-box">
-
-                <span class="search-icon">
-                    ⌕
-                </span>
-
-                <input
-                    id="transactionSearch"
-                    type="search"
-                    placeholder="Search customer or description..."
-                >
-
-            </div>
-
-
-            <select
-                class="filter-select"
-                id="transactionTypeFilter"
+            <button
+                class="btn primary"
+                onclick="openTransactionForm()"
             >
-
-                <option value="all">
-                    All Types
-                </option>
-
-                <option value="purchase">
-                    Credit Purchases
-                </option>
-
-                <option value="payment">
-                    Payments
-                </option>
-
-                <option value="debit">
-                    Debit Adjustments
-                </option>
-
-                <option value="credit">
-                    Credit Adjustments
-                </option>
-
-            </select>
+                ➕ Add Transaction
+            </button>
 
         </div>
 
+        <div class="card">
 
-        <div
-            class="card"
-            id="transactionsTableCard"
-        >
+            <div class="table-wrapper">
 
-            ${
-                transactions.length
-                    ? transactionTableHTML(
-                        transactions
-                    )
-                    : emptyStateHTML(
-                        "No Transactions",
-                        "No transactions match the current filters."
-                    )
-            }
+                <table class="data-table">
+
+                    <thead>
+
+                        <tr>
+
+                            <th>Date</th>
+                            <th>Customer</th>
+                            <th>Transaction</th>
+                            <th>Direction</th>
+                            <th>Method</th>
+                            <th>Amount</th>
+                            <th>Actions</th>
+
+                        </tr>
+
+                    </thead>
+
+                    <tbody>
+
+                        ${
+                            transactions.length
+                                ? transactions.map(
+                                    transaction =>
+                                        renderTransactionRow(
+                                            transaction
+                                        )
+                                  ).join("")
+                                : `
+                                    <tr>
+                                        <td
+                                            colspan="7"
+                                            class="empty-table"
+                                        >
+                                            No transactions yet.
+                                        </td>
+                                    </tr>
+                                  `
+                        }
+
+                    </tbody>
+
+                </table>
+
+            </div>
 
         </div>
     `;
-
-
-    document
-        .getElementById(
-            "transactionAddButton"
-        )
-        ?.addEventListener(
-            "click",
-            () => openTransactionModal()
-        );
-
-
-    document
-        .getElementById(
-            "transactionSearch"
-        )
-        ?.addEventListener(
-            "input",
-            filterTransactionTable
-        );
-
-
-    document
-        .getElementById(
-            "transactionTypeFilter"
-        )
-        ?.addEventListener(
-            "change",
-            event => {
-
-                transactionFilter =
-                    event.target.value;
-
-                renderTransactions();
-            }
-        );
 }
 
-
 /* =========================================================
-   FILTERED TRANSACTIONS
+   TRANSACTION ROW
 ========================================================= */
 
-function getFilteredTransactions() {
-
-    let transactions =
-        [...appData.transactions];
-
-
-    if (
-        transactionFilter !==
-        "all"
-    ) {
-
-        transactions =
-            transactions.filter(
-                transaction =>
-                    transaction.type ===
-                    transactionFilter
-            );
-    }
-
-
-    return transactions.sort(
-        (a, b) =>
-            new Date(b.date) -
-            new Date(a.date)
-    );
-}
-
-
-/* =========================================================
-   FILTER TRANSACTION TABLE
-========================================================= */
-
-function filterTransactionTable(event) {
-
-    const query =
-        event.target.value
-            .toLowerCase()
-            .trim();
-
-
-    const filtered =
-        getFilteredTransactions()
-            .filter(transaction => {
-
-                const customer =
-                    getCustomer(
-                        transaction.customerId
-                    );
-
-                return (
-
-                    (
-                        customer?.name ||
-                        ""
-                    )
-                        .toLowerCase()
-                        .includes(query)
-
-                    ||
-
-                    transaction.description
-                        .toLowerCase()
-                        .includes(query)
-
-                    ||
-
-                    (
-                        transaction.paymentMethod ||
-                        ""
-                    )
-                        .toLowerCase()
-                        .includes(query)
-                );
-            });
-
-
-    const card =
-        document.getElementById(
-            "transactionsTableCard"
-        );
-
-    if (!card) return;
-
-
-    card.innerHTML =
-        filtered.length
-            ? transactionTableHTML(
-                filtered
-            )
-            : emptyStateHTML(
-                "No Matches",
-                "No transactions match your search."
-            );
-}
-
-
-/* =========================================================
-   TRANSACTION TABLE
-========================================================= */
-
-function transactionTableHTML(
-    transactions
+function renderTransactionRow(
+    transaction
 ) {
 
+    const config =
+        getTransactionType(
+            transaction.type
+        );
+
     return `
 
-        <div class="table-wrap">
+        <tr>
 
-            <table class="data-table">
+            <td>
+                ${formatDate(
+                    transaction.date
+                )}
+            </td>
 
-                <thead>
-
-                    <tr>
-
-                        <th>Date</th>
-                        <th>Customer</th>
-                        <th>Description</th>
-                        <th>Type</th>
-                        <th>Method</th>
-                        <th>Amount</th>
-
-                    </tr>
-
-                </thead>
-
-                <tbody>
-
-                    ${transactions
-                        .map(
-                            transaction => {
-
-                                const customer =
-                                    getCustomer(
-                                        transaction.customerId
-                                    );
-
-                                const isDebit =
-                                    transaction.type ===
-                                        "purchase" ||
-                                    transaction.type ===
-                                        "debit";
-
-
-                                return `
-
-                                    <tr>
-
-                                        <td>
-                                            ${formatDate(
-                                                transaction.date
-                                            )}
-                                        </td>
-
-                                        <td>
-
-                                            <strong>
-                                                ${
-                                                    customer
-                                                        ? escapeHTML(
-                                                            customer.name
-                                                        )
-                                                        : "Unknown"
-                                                }
-                                            </strong>
-
-                                        </td>
-
-                                        <td>
-                                            ${escapeHTML(
-                                                transaction.description
-                                            )}
-                                        </td>
-
-                                        <td>
-                                            ${transactionTypeBadge(
-                                                transaction.type
-                                            )}
-                                        </td>
-
-                                        <td>
-                                            ${
-                                                transaction.paymentMethod
-                                                    ? `
-                                                        <span class="badge badge-neutral">
-                                                            ${escapeHTML(
-                                                                transaction.paymentMethod
-                                                            )}
-                                                        </span>
-                                                    `
-                                                    : "—"
-                                            }
-                                        </td>
-
-                                        <td>
-
-                                            <span
-                                                class="amount ${
-                                                    isDebit
-                                                        ? "positive"
-                                                        : "negative"
-                                                }"
-                                            >
-                                                ${
-                                                    isDebit
-                                                        ? "+"
-                                                        : "-"
-                                                }
-                                                ${formatMoney(
-                                                    transaction.amount
-                                                )}
-                                            </span>
-
-                                        </td>
-
-                                    </tr>
-                                `;
-                            }
+            <td>
+                <strong>
+                    ${escapeHTML(
+                        customerName(
+                            transaction.customerId
                         )
-                        .join("")
-                    }
+                    )}
+                </strong>
+            </td>
 
-                </tbody>
+            <td>
+                ${escapeHTML(
+                    config.label
+                )}
+            </td>
 
-            </table>
+            <td>
 
-        </div>
+                ${directionLabel(
+                    transaction.direction ||
+                    config.direction
+                )}
+
+            </td>
+
+            <td>
+                ${escapeHTML(
+                    transaction.paymentMethod ||
+                    "-"
+                )}
+            </td>
+
+            <td>
+                <strong>
+                    ${money(
+                        transaction.amount
+                    )}
+                </strong>
+            </td>
+
+            <td>
+
+                <div class="row-actions">
+
+                    <button
+                        class="icon-btn"
+                        title="Edit"
+                        onclick="editTransaction('${transaction.id}')"
+                    >
+                        ✏️
+                    </button>
+
+                    <button
+                        class="icon-btn danger"
+                        title="Delete"
+                        onclick="deleteTransaction('${transaction.id}')"
+                    >
+                        🗑️
+                    </button>
+
+                </div>
+
+            </td>
+
+        </tr>
     `;
 }
-
-
-/* =========================================================
-   TRANSACTION TYPE BADGE
-========================================================= */
-
-function transactionTypeBadge(type) {
-
-    const labels = {
-
-        purchase:
-            ["Credit Purchase", "badge-danger"],
-
-        payment:
-            ["Payment", "badge-success"],
-
-        debit:
-            ["Debit", "badge-warning"],
-
-        credit:
-            ["Credit", "badge-success"]
-    };
-
-
-    const item =
-        labels[type] ||
-        ["Other", "badge-neutral"];
-
-
-    return `
-
-        <span class="badge ${item[1]}">
-            ${item[0]}
-        </span>
-    `;
-}
-
 
 /* =========================================================
    CHEQUE REGISTER
@@ -3461,1063 +3708,398 @@ function transactionTypeBadge(type) {
 function renderCheques() {
 
     const cheques =
-        getFilteredCheques();
+        [...state.cheques]
+            .sort(
+                (a, b) =>
+                    new Date(
+                        a.clearanceDate || a.date || 0
+                    ) -
+                    new Date(
+                        b.clearanceDate || b.date || 0
+                    )
+            );
 
-
-    const outstanding =
-        appData.cheques.filter(
-            cheque =>
-                ![
-                    "Cleared",
-                    "Returned/Bounced",
-                    "Cancelled"
-                ].includes(
-                    cheque.status
-                )
-        );
-
-
-    const dueSoon =
-        getChequeAlerts();
-
-
-    const cleared =
-        appData.cheques.filter(
-            cheque =>
-                cheque.status ===
-                "Cleared"
-        );
-
-
-    appContent.innerHTML = `
+    return `
 
         <div class="page-header">
 
             <div>
 
-                <h1>Cheque Register</h1>
+                <h1>
+                    Cheque Register
+                </h1>
 
                 <p>
-                    Track cheque numbers, banks, dates and clearance status.
+                    Track receivable and payable cheques
                 </p>
 
             </div>
 
         </div>
 
+        <div class="card">
 
-        <div class="cheque-summary">
+            <div class="table-wrapper">
 
-            ${chequeSummaryCard(
-                "Outstanding",
-                outstanding.length,
-                formatMoney(
-                    outstanding.reduce(
-                        (sum, cheque) =>
-                            sum +
-                            Number(
-                                cheque.amount || 0
-                            ),
-                        0
-                    )
-                )
-            )}
+                <table class="data-table">
 
-            ${chequeSummaryCard(
-                "Due Soon",
-                dueSoon.length,
-                "Within 5 days"
-            )}
+                    <thead>
 
-            ${chequeSummaryCard(
-                "Cleared",
-                cleared.length,
-                formatMoney(
-                    cleared.reduce(
-                        (sum, cheque) =>
-                            sum +
-                            Number(
-                                cheque.amount || 0
-                            ),
-                        0
-                    )
-                )
-            )}
+                        <tr>
 
-            ${chequeSummaryCard(
-                "Total Cheques",
-                appData.cheques.length,
-                "All recorded cheques"
-            )}
+                            <th>Direction</th>
+                            <th>Customer</th>
+                            <th>Cheque No.</th>
+                            <th>Cheque Date</th>
+                            <th>Clearance</th>
+                            <th>Bank</th>
+                            <th>Amount</th>
+                            <th>Status</th>
+                            <th>Actions</th>
 
-        </div>
+                        </tr>
 
+                    </thead>
 
-        ${
-            dueSoon.length
-                ? `
-                    <div class="card card-padding"
-                         style="margin-bottom:18px;">
+                    <tbody>
 
-                        <div
-                            class="card-title"
-                            style="margin-bottom:12px;"
-                        >
-                            🔔 Clearance Alerts
-                        </div>
-
-                        ${dueSoon
-                            .map(
-                                alert =>
-                                    alertHTML(alert)
-                            )
-                            .join("")
+                        ${
+                            cheques.length
+                                ? cheques.map(
+                                    cheque =>
+                                        renderChequeRow(
+                                            cheque
+                                        )
+                                  ).join("")
+                                : `
+                                    <tr>
+                                        <td
+                                            colspan="9"
+                                            class="empty-table"
+                                        >
+                                            No cheques recorded.
+                                        </td>
+                                    </tr>
+                                  `
                         }
 
-                    </div>
-                `
-                : ""
-        }
+                    </tbody>
 
-
-        <div class="card filter-bar">
-
-            <div class="search-box">
-
-                <span class="search-icon">
-                    ⌕
-                </span>
-
-                <input
-                    id="chequeSearch"
-                    type="search"
-                    placeholder="Search cheque number, bank or customer..."
-                >
+                </table>
 
             </div>
 
-
-            <select
-                class="filter-select"
-                id="chequeStatusFilter"
-            >
-
-                <option value="all">
-                    All Statuses
-                </option>
-
-                <option value="Issued">
-                    Issued
-                </option>
-
-                <option value="Deposited">
-                    Deposited
-                </option>
-
-                <option value="Cleared">
-                    Cleared
-                </option>
-
-                <option value="Returned/Bounced">
-                    Returned / Bounced
-                </option>
-
-                <option value="Cancelled">
-                    Cancelled
-                </option>
-
-            </select>
-
-        </div>
-
-
-        <div
-            class="card"
-            id="chequeTableCard"
-        >
-
-            ${
-                cheques.length
-                    ? chequeTableHTML(
-                        cheques
-                    )
-                    : emptyStateHTML(
-                        "No Cheques",
-                        "Cheque payments will appear here automatically."
-                    )
-            }
-
         </div>
     `;
-
-
-    document
-        .getElementById(
-            "chequeSearch"
-        )
-        ?.addEventListener(
-            "input",
-            filterChequeTable
-        );
-
-
-    document
-        .getElementById(
-            "chequeStatusFilter"
-        )
-        ?.addEventListener(
-            "change",
-            event => {
-
-                chequeFilter =
-                    event.target.value;
-
-                renderCheques();
-            }
-        );
 }
 
-
 /* =========================================================
-   CHEQUE SUMMARY
+   CHEQUE ROW
 ========================================================= */
 
-function chequeSummaryCard(
-    label,
-    value,
-    small
+function renderChequeRow(
+    cheque
 ) {
+
+    const direction =
+        cheque.direction ||
+        RECEIVABLE;
 
     return `
 
-        <div class="card cheque-summary-card">
+        <tr>
 
-            <div class="cheque-summary-label">
-                ${escapeHTML(label)}
-            </div>
+            <td>
 
-            <div class="cheque-summary-value">
-                ${escapeHTML(String(value))}
-            </div>
+                ${
+                    direction === PAYABLE
+                        ? `
+                            <span class="direction-badge payable">
+                                🔴 PAYABLE
+                            </span>
+                            <small>
+                                Cheque Issued
+                            </small>
+                          `
+                        : `
+                            <span class="direction-badge receivable">
+                                🟢 RECEIVABLE
+                            </span>
+                            <small>
+                                Cheque Received
+                            </small>
+                          `
+                }
 
-            <div class="stat-small">
-                ${escapeHTML(String(small))}
-            </div>
+            </td>
 
-        </div>
-    `;
-}
-
-
-/* =========================================================
-   FILTERED CHEQUES
-========================================================= */
-
-function getFilteredCheques() {
-
-    let cheques =
-        [...appData.cheques];
-
-
-    if (
-        chequeFilter !==
-        "all"
-    ) {
-
-        cheques =
-            cheques.filter(
-                cheque =>
-                    cheque.status ===
-                    chequeFilter
-            );
-    }
-
-
-    return cheques.sort(
-        (a, b) =>
-            new Date(
-                a.clearanceDate ||
-                a.chequeDate ||
-                a.createdAt
-            ) -
-            new Date(
-                b.clearanceDate ||
-                b.chequeDate ||
-                b.createdAt
-            )
-    );
-}
-
-
-/* =========================================================
-   FILTER CHEQUE TABLE
-========================================================= */
-
-function filterChequeTable(event) {
-
-    const query =
-        event.target.value
-            .toLowerCase()
-            .trim();
-
-
-    const filtered =
-        getFilteredCheques()
-            .filter(cheque => {
-
-                const customer =
-                    getCustomer(
+            <td>
+                ${escapeHTML(
+                    customerName(
                         cheque.customerId
-                    );
-
-                return (
-
-                    cheque.chequeNumber
-                        .toLowerCase()
-                        .includes(query)
-
-                    ||
-
-                    (
-                        cheque.bank ||
-                        ""
                     )
-                        .toLowerCase()
-                        .includes(query)
+                )}
+            </td>
 
-                    ||
+            <td>
+                ${escapeHTML(
+                    cheque.chequeNumber ||
+                    "-"
+                )}
+            </td>
 
-                    (
-                        cheque.drawer ||
-                        ""
-                    )
-                        .toLowerCase()
-                        .includes(query)
+            <td>
+                ${formatDate(
+                    cheque.date
+                )}
+            </td>
 
-                    ||
+            <td>
 
-                    (
-                        customer?.name ||
-                        ""
-                    )
-                        .toLowerCase()
-                        .includes(query)
-                );
-            });
+                ${
+                    cheque.clearanceDate
+                        ? formatDate(
+                            cheque.clearanceDate
+                          )
+                        : "-"
+                }
 
+            </td>
 
-    const card =
-        document.getElementById(
-            "chequeTableCard"
-        );
+            <td>
+                ${escapeHTML(
+                    cheque.bank ||
+                    "-"
+                )}
+            </td>
 
-    if (!card) return;
+            <td>
+                <strong>
+                    ${money(
+                        cheque.amount
+                    )}
+                </strong>
+            </td>
 
+            <td>
+                <span class="status-badge">
+                    ${escapeHTML(
+                        cheque.status ||
+                        "Issued"
+                    )}
+                </span>
+            </td>
 
-    card.innerHTML =
-        filtered.length
-            ? chequeTableHTML(
-                filtered
-            )
-            : emptyStateHTML(
-                "No Matches",
-                "No cheques match your search."
-            );
-}
+            <td>
 
+                <div class="row-actions">
 
-/* =========================================================
-   CHEQUE TABLE
-========================================================= */
+                    <button
+                        class="icon-btn"
+                        title="Edit"
+                        onclick="editCheque('${cheque.id}')"
+                    >
+                        ✏️
+                    </button>
 
-function chequeTableHTML(
-    cheques
-) {
+                    <button
+                        class="icon-btn danger"
+                        title="Delete"
+                        onclick="deleteCheque('${cheque.id}')"
+                    >
+                        🗑️
+                    </button>
 
-    return `
+                </div>
 
-        <div class="table-wrap">
+            </td>
 
-            <table class="data-table">
-
-                <thead>
-
-                    <tr>
-
-                        <th>Cheque Date</th>
-                        <th>Customer</th>
-                        <th>Cheque No.</th>
-                        <th>Bank</th>
-                        <th>Amount</th>
-                        <th>Clearance</th>
-                        <th>Status</th>
-
-                    </tr>
-
-                </thead>
-
-                <tbody>
-
-                    ${cheques
-                        .map(
-                            cheque => {
-
-                                const customer =
-                                    getCustomer(
-                                        cheque.customerId
-                                    );
-
-                                return `
-
-                                    <tr>
-
-                                        <td>
-                                            ${formatDate(
-                                                cheque.chequeDate
-                                            )}
-                                        </td>
-
-                                        <td>
-                                            ${
-                                                customer
-                                                    ? escapeHTML(
-                                                        customer.name
-                                                    )
-                                                    : "Unknown"
-                                            }
-                                        </td>
-
-                                        <td>
-                                            <strong>
-                                                ${escapeHTML(
-                                                    cheque.chequeNumber
-                                                )}
-                                            </strong>
-                                        </td>
-
-                                        <td>
-                                            ${
-                                                cheque.bank
-                                                    ? escapeHTML(
-                                                        cheque.bank
-                                                    )
-                                                    : "—"
-                                            }
-                                        </td>
-
-                                        <td>
-                                            <span class="amount">
-                                                ${formatMoney(
-                                                    cheque.amount
-                                                )}
-                                            </span>
-                                        </td>
-
-                                        <td>
-                                            ${
-                                                cheque.clearanceDate
-                                                    ? formatDate(
-                                                        cheque.clearanceDate
-                                                    )
-                                                    : "—"
-                                            }
-                                        </td>
-
-                                        <td>
-                                            ${chequeStatusBadge(
-                                                cheque.status
-                                            )}
-                                        </td>
-
-                                    </tr>
-                                `;
-                            }
-                        )
-                        .join("")
-                    }
-
-                </tbody>
-
-            </table>
-
-        </div>
+        </tr>
     `;
 }
 
-
 /* =========================================================
-   CHEQUE STATUS BADGE
+   UPCOMING CHEQUES
 ========================================================= */
 
-function chequeStatusBadge(
-    status
-) {
+function getUpcomingCheques() {
 
-    const classes = {
+    const now =
+        new Date();
 
-        Issued:
-            "badge-warning",
-
-        Deposited:
-            "badge-gold",
-
-        Cleared:
-            "badge-success",
-
-        "Returned/Bounced":
-            "badge-danger",
-
-        Cancelled:
-            "badge-neutral"
-    };
-
-
-    return `
-
-        <span class="badge ${
-            classes[status] ||
-            "badge-neutral"
-        }">
-
-            ${escapeHTML(
-                status
-            )}
-
-        </span>
-    `;
-}
-
-
-/* =========================================================
-   CHEQUE ALERTS
-========================================================= */
-
-function getChequeAlerts() {
-
-    const today =
-        startOfDay(
-            new Date()
-        );
-
-
-    const notificationDays =
-        Number(
-            appData.settings
-                ?.notificationDays || 5
-        );
-
-
-    const end =
-        new Date(today);
-
-    end.setDate(
-        end.getDate() +
-        notificationDays
+    now.setHours(
+        0,
+        0,
+        0,
+        0
     );
 
+    const fiveDays =
+        new Date(now);
 
-    return appData.cheques
+    fiveDays.setDate(
+        fiveDays.getDate() + 5
+    );
+
+    return state.cheques
         .filter(
             cheque => {
 
                 if (
-                    [
-                        "Cleared",
-                        "Returned/Bounced",
-                        "Cancelled"
-                    ].includes(
-                        cheque.status
-                    )
+                    cheque.status !==
+                        "Issued" &&
+                    cheque.status !==
+                        "Deposited"
                 ) {
+
                     return false;
                 }
-
 
                 if (
                     !cheque.clearanceDate
                 ) {
+
                     return false;
                 }
 
-
-                const clearance =
-                    startOfDay(
-                        parseDate(
-                            cheque.clearanceDate
-                        )
+                const date =
+                    new Date(
+                        cheque.clearanceDate
                     );
 
+                date.setHours(
+                    0,
+                    0,
+                    0,
+                    0
+                );
 
                 return (
-                    clearance >= today &&
-                    clearance <= end
+                    date >= now &&
+                    date <= fiveDays
                 );
-            }
-        )
-        .map(
-            cheque => {
-
-                const clearance =
-                    startOfDay(
-                        parseDate(
-                            cheque.clearanceDate
-                        )
-                    );
-
-
-                const days =
-                    Math.round(
-                        (
-                            clearance -
-                            today
-                        ) /
-                        86400000
-                    );
-
-
-                const customer =
-                    getCustomer(
-                        cheque.customerId
-                    );
-
-
-                return {
-
-                    cheque,
-
-                    customer,
-
-                    days,
-
-                    title:
-                        days === 0
-                            ? "Cheque due today"
-                            : days === 1
-                                ? "Cheque due tomorrow"
-                                : `Cheque due in ${days} days`
-                };
             }
         )
         .sort(
             (a, b) =>
-                a.days -
-                b.days
+                new Date(
+                    a.clearanceDate
+                ) -
+                new Date(
+                    b.clearanceDate
+                )
         );
 }
 
-
 /* =========================================================
-   ALERT HTML
+   CHEQUE ALERT
 ========================================================= */
 
-function alertHTML(
-    alert
+function renderChequeAlert(
+    cheque
 ) {
 
-    const cheque =
-        alert.cheque;
-
-    const customer =
-        alert.customer;
-
+    const direction =
+        cheque.direction ||
+        RECEIVABLE;
 
     return `
 
-        <div class="alert-card ${
-            alert.days <= 1
-                ? "danger"
-                : "warning"
-        }">
-
-            <div class="alert-icon">
-                🔔
-            </div>
-
-            <div style="flex:1;">
-
-                <div class="alert-title">
-                    ${escapeHTML(
-                        alert.title
-                    )}
-                </div>
-
-                <div class="alert-text">
-
-                    ${
-                        customer
-                            ? escapeHTML(
-                                customer.name
-                            )
-                            : "Unknown customer"
-                    }
-
-                    · Cheque
-                    <strong>
-                        ${escapeHTML(
-                            cheque.chequeNumber
-                        )}
-                    </strong>
-
-                    ·
-
-                    <strong>
-                        ${formatMoney(
-                            cheque.amount
-                        )}
-                    </strong>
-
-                    · Clearance
-                    ${formatDate(
-                        cheque.clearanceDate
-                    )}
-
-                </div>
-
-            </div>
-
-        </div>
-    `;
-}
-
-
-/* =========================================================
-   PRINT STATEMENTS
-========================================================= */
-
-function renderPrintStatements() {
-
-    const customers =
-        appData.customers;
-
-
-    appContent.innerHTML = `
-
-        <div class="page-header">
+        <div
+            class="alert-item ${
+                direction === PAYABLE
+                    ? "payable"
+                    : "receivable"
+            }"
+        >
 
             <div>
 
-                <h1>Print Statements</h1>
+                <strong>
 
-                <p>
-                    Select one, several or all customers.
-                </p>
+                    ${
+                        direction === PAYABLE
+                            ? "🔴 PAYABLE"
+                            : "🟢 RECEIVABLE"
+                    }
 
-            </div>
+                </strong>
 
-            <div class="page-header-actions">
-
-                <button
-                    class="primary-button"
-                    id="printSelectedButton"
-                >
-                    ⎙ Print Selected
-                </button>
-
-            </div>
-
-        </div>
-
-
-        <div class="card card-padding">
-
-            <div class="print-actions">
-
-                <button
-                    class="secondary-button"
-                    id="selectAllCustomers"
-                >
-                    Select All
-                </button>
-
-                <button
-                    class="secondary-button"
-                    id="clearCustomerSelection"
-                >
-                    Clear
-                </button>
-
-                <span
-                    id="selectedCustomerCount"
-                    class="badge badge-gold"
-                >
-                    0 selected
+                <span>
+                    ${escapeHTML(
+                        customerName(
+                            cheque.customerId
+                        )
+                    )}
                 </span>
 
+                <small>
+                    Cheque ${
+                        escapeHTML(
+                            cheque.chequeNumber ||
+                            "-"
+                        )
+                    }
+                    · Clears
+                    ${formatDate(
+                        cheque.clearanceDate
+                    )}
+                </small>
+
             </div>
 
-
-            ${
-                customers.length
-                    ? `
-                        <div class="print-customer-list">
-
-                            ${customers
-                                .map(
-                                    customer =>
-                                        `
-                                        <label
-                                            class="print-customer-item"
-                                        >
-
-                                            <input
-                                                type="checkbox"
-                                                class="checkbox print-customer-checkbox"
-                                                value="${customer.id}"
-                                                ${
-                                                    printSelectedCustomers.has(
-                                                        customer.id
-                                                    )
-                                                        ? "checked"
-                                                        : ""
-                                                }
-                                            >
-
-                                            <span>
-
-                                                <strong>
-                                                    ${escapeHTML(
-                                                        customer.name
-                                                    )}
-                                                </strong>
-
-                                                <small
-                                                    style="
-                                                        display:block;
-                                                        margin-top:3px;
-                                                        color:var(--muted);
-                                                    "
-                                                >
-                                                    Balance:
-                                                    ${formatMoney(
-                                                        Math.abs(
-                                                            getCustomerBalance(
-                                                                customer.id
-                                                            )
-                                                        )
-                                                    )}
-                                                </small>
-
-                                            </span>
-
-                                        </label>
-                                        `
-                                )
-                                .join("")
-                            }
-
-                        </div>
-                    `
-                    : emptyStateHTML(
-                        "No Customers",
-                        "Add customers before printing statements."
-                    )
-            }
+            <strong>
+                ${money(
+                    cheque.amount
+                )}
+            </strong>
 
         </div>
     `;
-
-
-    document
-        .querySelectorAll(
-            ".print-customer-checkbox"
-        )
-        .forEach(
-            checkbox =>
-                checkbox.addEventListener(
-                    "change",
-                    updatePrintSelection
-                )
-        );
-
-
-    document
-        .getElementById(
-            "selectAllCustomers"
-        )
-        ?.addEventListener(
-            "click",
-            () => {
-
-                customers.forEach(
-                    customer =>
-                        printSelectedCustomers.add(
-                            customer.id
-                        )
-                );
-
-                renderPrintStatements();
-            }
-        );
-
-
-    document
-        .getElementById(
-            "clearCustomerSelection"
-        )
-        ?.addEventListener(
-            "click",
-            () => {
-
-                printSelectedCustomers.clear();
-
-                renderPrintStatements();
-            }
-        );
-
-
-    document
-        .getElementById(
-            "printSelectedButton"
-        )
-        ?.addEventListener(
-            "click",
-            () => {
-
-                if (
-                    !printSelectedCustomers.size
-                ) {
-
-                    showToast(
-                        "Select at least one customer.",
-                        "!"
-                    );
-
-                    return;
-                }
-
-
-                printStatements(
-                    Array.from(
-                        printSelectedCustomers
-                    )
-                );
-            }
-        );
-
-
-    updatePrintCount();
 }
 
-
 /* =========================================================
-   UPDATE PRINT SELECTION
+   PRINT STATEMENT
 ========================================================= */
 
-function updatePrintSelection(
-    event
+function printStatement(
+    customerId
 ) {
 
-    const id =
-        event.target.value;
+    const customer =
+        getCustomer(customerId);
 
-
-    if (event.target.checked) {
-
-        printSelectedCustomers.add(id);
-
-    } else {
-
-        printSelectedCustomers.delete(id);
-    }
-
-
-    updatePrintCount();
-}
-
-
-/* =========================================================
-   UPDATE PRINT COUNT
-========================================================= */
-
-function updatePrintCount() {
-
-    const element =
-        document.getElementById(
-            "selectedCustomerCount"
-        );
-
-    if (!element) return;
-
-    element.textContent =
-        `${printSelectedCustomers.size} selected`;
-}
-
-
-/* =========================================================
-   PRINT STATEMENTS
-========================================================= */
-
-function printStatements(
-    customerIds
-) {
-
-    if (!customerIds.length) {
-
-        showToast(
-            "No customers selected.",
-            "!"
-        );
-
+    if (!customer) {
         return;
     }
 
+    const totals =
+        getCustomerTotals(
+            customerId
+        );
 
-    const customers =
-        customerIds
-            .map(
-                id =>
-                    getCustomer(id)
-            )
-            .filter(Boolean);
+    const statement =
+        buildStatement(
+            customerId
+        );
 
-
-    let pages = "";
-
-
-    customers.forEach(
-        customer => {
-
-            const transactions =
-                getCustomerTransactions(
-                    customer.id
-                );
-
-
-            const balance =
-                getCustomerBalance(
-                    customer.id
-                );
-
-
-            pages +=
-                printableStatementHTML(
-                    customer,
-                    transactions,
-                    balance
-                );
-        }
-    );
-
-
-    const printWindow =
+    const win =
         window.open(
             "",
             "_blank"
         );
 
+    if (!win) {
 
-    if (!printWindow) {
-
-        showToast(
-            "Please allow pop-ups to print statements.",
-            "!"
+        toast(
+            "Please allow pop-ups to print.",
+            "error"
         );
 
         return;
     }
 
-
-    printWindow.document.write(`
+    win.document.write(`
 
         <!DOCTYPE html>
 
@@ -4525,192 +4107,133 @@ function printStatements(
 
         <head>
 
-            <meta charset="UTF-8">
-
             <title>
-                Customer Statements
+                ${escapeHTML(
+                    customer.name
+                )} - Statement
             </title>
 
             <style>
 
                 * {
-                    box-sizing:border-box;
+                    box-sizing: border-box;
                 }
 
                 body {
-                    margin:0;
-                    padding:0;
-                    color:#111;
-                    background:#fff;
                     font-family:
                         Arial,
-                        Helvetica,
                         sans-serif;
+
+                    margin: 30px;
+
+                    color: #111;
                 }
 
-                .statement-page {
-
-                    page-break-after:always;
-
-                    min-height:270mm;
-
-                    padding:8mm;
-                }
-
-                .statement-page:last-child {
-                    page-break-after:auto;
+                h1 {
+                    margin-bottom: 4px;
                 }
 
                 .header {
-
-                    display:flex;
-
-                    justify-content:space-between;
-
-                    gap:20px;
-
-                    padding-bottom:15px;
-
                     border-bottom:
-                        2px solid #111;
+                        3px solid #fcc224;
+
+                    padding-bottom:
+                        15px;
+
+                    margin-bottom:
+                        20px;
                 }
 
-                .company {
-
-                    font-size:21px;
-
-                    font-weight:800;
-                }
-
-                .company-sub {
-
-                    margin-top:4px;
-
-                    font-size:11px;
-
-                    color:#666;
-                }
-
-                .customer {
-
-                    text-align:right;
-                }
-
-                .customer-name {
-
-                    font-size:18px;
-
-                    font-weight:800;
-                }
-
-                .customer-info {
-
-                    margin-top:4px;
-
-                    font-size:10px;
-
-                    color:#666;
-
-                    line-height:1.5;
+                .brand {
+                    font-weight: bold;
+                    font-size: 20px;
                 }
 
                 .summary {
-
-                    display:grid;
-
+                    display: grid;
                     grid-template-columns:
-                        repeat(3,1fr);
+                        repeat(3, 1fr);
 
-                    gap:10px;
+                    gap: 12px;
 
-                    margin:15px 0;
+                    margin-bottom:
+                        20px;
                 }
 
-                .summary-box {
+                .box {
+                    border:
+                        1px solid #ddd;
 
-                    padding:11px;
+                    padding: 14px;
 
-                    border:1px solid #ddd;
-
-                    border-radius:6px;
+                    border-radius: 8px;
                 }
 
-                .summary-label {
-
-                    font-size:9px;
-
-                    color:#666;
-
-                    text-transform:uppercase;
-
-                    font-weight:700;
+                .box strong {
+                    display: block;
+                    font-size: 20px;
+                    margin-top: 5px;
                 }
 
-                .summary-value {
+                .receivable {
+                    border-left:
+                        5px solid #1f9d55;
+                }
 
-                    margin-top:5px;
-
-                    font-size:15px;
-
-                    font-weight:800;
+                .payable {
+                    border-left:
+                        5px solid #d93025;
                 }
 
                 table {
+                    width: 100%;
+                    border-collapse:
+                        collapse;
+                }
 
-                    width:100%;
+                th,
+                td {
+                    border:
+                        1px solid #ddd;
 
-                    border-collapse:collapse;
+                    padding:
+                        8px;
 
-                    font-size:10px;
+                    text-align:
+                        left;
+
+                    font-size:
+                        12px;
                 }
 
                 th {
-
-                    padding:8px;
-
-                    background:#f2f2f2;
-
-                    border:1px solid #ddd;
-
-                    text-align:left;
-
-                    font-size:9px;
-
-                    text-transform:uppercase;
-                }
-
-                td {
-
-                    padding:8px;
-
-                    border:1px solid #ddd;
-
-                    vertical-align:top;
+                    background:
+                        #f5f5f5;
                 }
 
                 .right {
-
-                    text-align:right;
+                    text-align:
+                        right;
                 }
 
                 .footer {
+                    margin-top:
+                        30px;
 
-                    margin-top:20px;
+                    font-size:
+                        11px;
 
-                    padding-top:10px;
-
-                    border-top:1px solid #ddd;
-
-                    font-size:9px;
-
-                    color:#666;
+                    color:
+                        #666;
                 }
 
-                @page {
+                @media print {
 
-                    size:A4;
+                    body {
+                        margin:
+                            15mm;
+                    }
 
-                    margin:8mm;
                 }
 
             </style>
@@ -4719,297 +4242,88 @@ function printStatements(
 
         <body>
 
-            ${pages}
-
-            <script>
-
-                window.onload = function() {
-
-                    setTimeout(
-                        function() {
-                            window.print();
-                        },
-                        300
-                    );
-
-                };
-
-            <\/script>
-
-        </body>
-
-        </html>
-    `);
-
-
-    printWindow.document.close();
-}
-
-
-/* =========================================================
-   PRINTABLE STATEMENT
-========================================================= */
-
-function printableStatementHTML(
-    customer,
-    transactions,
-    balance
-) {
-
-    let runningBalance =
-        Number(
-            customer.openingBalance || 0
-        );
-
-
-    let rows = `
-
-        <tr>
-
-            <td>
-                ${formatDate(
-                    customer.createdAt
-                )}
-            </td>
-
-            <td>
-                <strong>
-                    Opening Balance
-                </strong>
-            </td>
-
-            <td class="right">
-                ${
-                    runningBalance > 0
-                        ? formatMoney(
-                            runningBalance
-                        )
-                        : "—"
-                }
-            </td>
-
-            <td class="right">
-                ${
-                    runningBalance < 0
-                        ? formatMoney(
-                            Math.abs(
-                                runningBalance
-                            )
-                        )
-                        : "—"
-                }
-            </td>
-
-            <td class="right">
-                ${formatMoney(
-                    Math.abs(
-                        runningBalance
-                    )
-                )}
-            </td>
-
-        </tr>
-    `;
-
-
-    [...transactions]
-        .sort(
-            (a, b) =>
-                new Date(a.date) -
-                new Date(b.date)
-        )
-        .forEach(
-            transaction => {
-
-                const amount =
-                    Number(
-                        transaction.amount || 0
-                    );
-
-
-                const debit =
-                    transaction.type ===
-                        "purchase" ||
-                    transaction.type ===
-                        "debit";
-
-
-                if (debit) {
-
-                    runningBalance += amount;
-
-                } else {
-
-                    runningBalance -= amount;
-                }
-
-
-                rows += `
-
-                    <tr>
-
-                        <td>
-                            ${formatDate(
-                                transaction.date
-                            )}
-                        </td>
-
-                        <td>
-                            ${escapeHTML(
-                                transaction.description
-                            )}
-
-                            ${
-                                transaction.notes
-                                    ? `
-                                        <br>
-                                        <span
-                                            style="color:#777;"
-                                        >
-                                            ${escapeHTML(
-                                                transaction.notes
-                                            )}
-                                        </span>
-                                    `
-                                    : ""
-                            }
-                        </td>
-
-                        <td class="right">
-                            ${
-                                debit
-                                    ? formatMoney(
-                                        amount
-                                    )
-                                    : "—"
-                            }
-                        </td>
-
-                        <td class="right">
-                            ${
-                                !debit
-                                    ? formatMoney(
-                                        amount
-                                    )
-                                    : "—"
-                            }
-                        </td>
-
-                        <td class="right">
-                            ${formatMoney(
-                                Math.abs(
-                                    runningBalance
-                                )
-                            )}
-                        </td>
-
-                    </tr>
-                `;
-            }
-        );
-
-
-    return `
-
-        <section class="statement-page">
-
             <div class="header">
 
-                <div>
-
-                    <div class="company">
-                        Al Jefoon Tents
-                    </div>
-
-                    <div class="company-sub">
-                        Customer Account Statement
-                    </div>
-
+                <div class="brand">
+                    AL JEFOON TENTS
                 </div>
 
+                <h1>
+                    Customer Statement
+                </h1>
 
-                <div class="customer">
+                <strong>
+                    ${escapeHTML(
+                        customer.name
+                    )}
+                </strong>
 
-                    <div class="customer-name">
-                        ${escapeHTML(
-                            customer.name
-                        )}
-                    </div>
-
-                    <div class="customer-info">
-
-                        ${
-                            customer.phone
-                                ? escapeHTML(
-                                    customer.phone
-                                )
-                                : ""
-                        }
-
-                        ${
-                            customer.email
-                                ? "<br>" +
-                                  escapeHTML(
-                                      customer.email
-                                  )
-                                : ""
-                        }
-
-                    </div>
-
-                </div>
+                ${
+                    customer.company
+                        ? `<div>
+                            ${escapeHTML(
+                                customer.company
+                            )}
+                           </div>`
+                        : ""
+                }
 
             </div>
-
 
             <div class="summary">
 
-                <div class="summary-box">
+                <div class="box receivable">
 
-                    <div class="summary-label">
-                        Opening Balance
-                    </div>
+                    🟢 RECEIVABLE
 
-                    <div class="summary-value">
-                        ${formatMoney(
-                            customer.openingBalance || 0
+                    <strong>
+                        ${money(
+                            totals.receivable
                         )}
-                    </div>
+                    </strong>
+
+                    Customer owes Al Jefoon
 
                 </div>
 
+                <div class="box payable">
 
-                <div class="summary-box">
+                    🔴 PAYABLE
 
-                    <div class="summary-label">
-                        Current Balance
-                    </div>
-
-                    <div class="summary-value">
-                        ${formatMoney(
-                            Math.abs(balance)
+                    <strong>
+                        ${money(
+                            totals.payable
                         )}
-                    </div>
+                    </strong>
+
+                    Al Jefoon owes customer
 
                 </div>
 
+                <div class="box">
 
-                <div class="summary-box">
+                    NET POSITION
 
-                    <div class="summary-label">
-                        Statement Date
-                    </div>
-
-                    <div class="summary-value">
-                        ${formatDate(
-                            todayISO()
-                        )}
-                    </div>
+                    <strong>
+                        ${
+                            totals.receivable >=
+                            totals.payable
+                                ? money(
+                                    totals.receivable -
+                                    totals.payable
+                                  ) +
+                                  " RECEIVABLE"
+                                : money(
+                                    totals.payable -
+                                    totals.receivable
+                                  ) +
+                                  " PAYABLE"
+                        }
+                    </strong>
 
                 </div>
 
             </div>
-
 
             <table>
 
@@ -5017,24 +4331,18 @@ function printableStatementHTML(
 
                     <tr>
 
-                        <th>
-                            Date
-                        </th>
-
-                        <th>
-                            Description
-                        </th>
-
+                        <th>Date</th>
+                        <th>Description</th>
+                        <th>Direction</th>
+                        <th>Reference</th>
                         <th class="right">
-                            Debit
+                            Amount
                         </th>
-
                         <th class="right">
-                            Credit
+                            Receivable
                         </th>
-
                         <th class="right">
-                            Balance
+                            Payable
                         </th>
 
                     </tr>
@@ -5043,360 +4351,238 @@ function printableStatementHTML(
 
                 <tbody>
 
-                    ${rows}
+                    ${statement.map(
+                        row => `
+
+                            <tr>
+
+                                <td>
+                                    ${formatDate(
+                                        row.date
+                                    )}
+                                </td>
+
+                                <td>
+                                    ${escapeHTML(
+                                        row.description ||
+                                        ""
+                                    )}
+                                </td>
+
+                                <td>
+                                    ${
+                                        row.direction ===
+                                        PAYABLE
+                                            ? "🔴 PAYABLE"
+                                            : "🟢 RECEIVABLE"
+                                    }
+                                </td>
+
+                                <td>
+                                    ${escapeHTML(
+                                        row.reference ||
+                                        "-"
+                                    )}
+                                </td>
+
+                                <td class="right">
+                                    ${money(
+                                        row.amount
+                                    )}
+                                </td>
+
+                                <td class="right">
+                                    ${money(
+                                        Math.max(
+                                            0,
+                                            row.receivable ||
+                                            0
+                                        )
+                                    )}
+                                </td>
+
+                                <td class="right">
+                                    ${money(
+                                        Math.max(
+                                            0,
+                                            row.payable ||
+                                            0
+                                        )
+                                    )}
+                                </td>
+
+                            </tr>
+
+                        `
+                    ).join("")}
 
                 </tbody>
 
             </table>
 
-
             <div class="footer">
 
-                Generated by
-                Al Jefoon Tents Customer Statements
+                Printed:
+                ${new Date().toLocaleString(
+                    "en-AE"
+                )}
+
+                <br><br>
+
+                Al Jefoon Tents
 
             </div>
 
-        </section>
-    `;
-}
+            <script>
 
+                window.onload =
+                    function () {
 
-/* =========================================================
-   REPORTS
-========================================================= */
+                        window.print();
 
-function renderReports() {
-
-    const customers =
-        appData.customers;
-
-
-    const rows =
-        customers
-            .map(
-                customer => {
-
-                    const transactions =
-                        getCustomerTransactions(
-                            customer.id
-                        );
-
-
-                    const purchases =
-                        transactions
-                            .filter(
-                                t =>
-                                    t.type ===
-                                        "purchase" ||
-                                    t.type ===
-                                        "debit"
-                            )
-                            .reduce(
-                                (sum, t) =>
-                                    sum +
-                                    Number(
-                                        t.amount || 0
-                                    ),
-                                0
-                            );
-
-
-                    const payments =
-                        transactions
-                            .filter(
-                                t =>
-                                    t.type ===
-                                        "payment" ||
-                                    t.type ===
-                                        "credit"
-                            )
-                            .reduce(
-                                (sum, t) =>
-                                    sum +
-                                    Number(
-                                        t.amount || 0
-                                    ),
-                                0
-                            );
-
-
-                    const balance =
-                        getCustomerBalance(
-                            customer.id
-                        );
-
-
-                    return {
-
-                        customer,
-
-                        purchases,
-
-                        payments,
-
-                        balance
                     };
-                }
-            )
-            .sort(
-                (a, b) =>
-                    Math.abs(
-                        b.balance
-                    ) -
-                    Math.abs(
-                        a.balance
-                    )
-            );
 
+            <\/script>
 
-    const totalPurchases =
-        rows.reduce(
-            (sum, row) =>
-                sum + row.purchases,
-            0
-        );
+        </body>
 
+        </html>
+    `);
 
-    const totalPayments =
-        rows.reduce(
-            (sum, row) =>
-                sum + row.payments,
-            0
-        );
-
-
-    const totalBalances =
-        rows.reduce(
-            (sum, row) =>
-                sum + row.balance,
-            0
-        );
-
-
-    appContent.innerHTML = `
-
-        <div class="page-header">
-
-            <div>
-
-                <h1>Reports</h1>
-
-                <p>
-                    Customer account summary and outstanding balances.
-                </p>
-
-            </div>
-
-            <div class="page-header-actions">
-
-                <button
-                    class="primary-button"
-                    id="printReportButton"
-                >
-                    ⎙ Print Report
-                </button>
-
-            </div>
-
-        </div>
-
-
-        <div class="stats-grid">
-
-            ${statCard(
-                "Credit Purchases",
-                formatMoney(
-                    totalPurchases
-                ),
-                "▤",
-                "Total debit activity"
-            )}
-
-            ${statCard(
-                "Payments",
-                formatMoney(
-                    totalPayments
-                ),
-                "↓",
-                "Total credit activity"
-            )}
-
-            ${statCard(
-                "Net Receivable",
-                formatMoney(
-                    Math.max(
-                        totalBalances,
-                        0
-                    )
-                ),
-                "◉",
-                "Positive customer balances"
-            )}
-
-            ${statCard(
-                "Accounts",
-                customers.length,
-                "♙",
-                "Customer accounts"
-            )}
-
-        </div>
-
-
-        <div class="card">
-
-            <div class="card-header">
-
-                <div>
-
-                    <div class="card-title">
-                        Customer Account Summary
-                    </div>
-
-                    <div class="card-subtitle">
-                        Opening balances plus transaction activity
-                    </div>
-
-                </div>
-
-            </div>
-
-
-            ${
-                rows.length
-                    ? `
-                        <div class="table-wrap">
-
-                            <table
-                                class="data-table"
-                                id="reportTable"
-                            >
-
-                                <thead>
-
-                                    <tr>
-
-                                        <th>Customer</th>
-                                        <th>Opening</th>
-                                        <th>Purchases</th>
-                                        <th>Payments</th>
-                                        <th>Balance</th>
-
-                                    </tr>
-
-                                </thead>
-
-                                <tbody>
-
-                                    ${rows
-                                        .map(
-                                            row =>
-                                                `
-                                                <tr>
-
-                                                    <td>
-                                                        <strong>
-                                                            ${escapeHTML(
-                                                                row.customer.name
-                                                            )}
-                                                        </strong>
-                                                    </td>
-
-                                                    <td>
-                                                        ${formatMoney(
-                                                            row.customer.openingBalance ||
-                                                            0
-                                                        )}
-                                                    </td>
-
-                                                    <td>
-                                                        ${formatMoney(
-                                                            row.purchases
-                                                        )}
-                                                    </td>
-
-                                                    <td>
-                                                        ${formatMoney(
-                                                            row.payments
-                                                        )}
-                                                    </td>
-
-                                                    <td>
-
-                                                        <span
-                                                            class="amount ${
-                                                                row.balance > 0
-                                                                    ? "positive"
-                                                                    : row.balance < 0
-                                                                        ? "negative"
-                                                                        : "neutral"
-                                                            }"
-                                                        >
-                                                            ${formatMoney(
-                                                                Math.abs(
-                                                                    row.balance
-                                                                )
-                                                            )}
-                                                        </span>
-
-                                                    </td>
-
-                                                </tr>
-                                                `
-                                        )
-                                        .join("")
-                                    }
-
-                                </tbody>
-
-                            </table>
-
-                        </div>
-                    `
-                    : emptyStateHTML(
-                        "No Report Data",
-                        "Add customers and transactions to generate reports."
-                    )
-            }
-
-        </div>
-    `;
-
-
-    document
-        .getElementById(
-            "printReportButton"
-        )
-        ?.addEventListener(
-            "click",
-            printReport
-        );
+    win.document.close();
 }
 
-
 /* =========================================================
-   PRINT REPORT
+   PRINT MULTIPLE STATEMENTS
 ========================================================= */
 
-function printReport() {
+function printSelectedStatements() {
 
-    const table =
-        document.getElementById(
-            "reportTable"
-        );
+    if (!state.customers.length) {
 
-
-    if (!table) {
-
-        showToast(
-            "There is no report to print.",
-            "!"
+        toast(
+            "No customers available.",
+            "error"
         );
 
         return;
     }
 
+    openModal(`
+
+        <div class="modal-header">
+
+            <h2>
+                🖨️ Print Statements
+            </h2>
+
+            <button
+                class="modal-close"
+                onclick="closeModal()"
+            >
+                ×
+            </button>
+
+        </div>
+
+        <div class="print-customer-list">
+
+            ${state.customers.map(
+                customer => `
+                    <label class="checkbox-row">
+
+                        <input
+                            type="checkbox"
+                            name="printCustomer"
+                            value="${customer.id}"
+                        >
+
+                        <span>
+                            ${escapeHTML(
+                                customer.name
+                            )}
+                        </span>
+
+                    </label>
+                `
+            ).join("")}
+
+        </div>
+
+        <div class="modal-actions">
+
+            <button
+                class="btn"
+                onclick="selectAllPrintCustomers(true)"
+            >
+                Select All
+            </button>
+
+            <button
+                class="btn"
+                onclick="selectAllPrintCustomers(false)"
+            >
+                Clear
+            </button>
+
+            <button
+                class="btn primary"
+                onclick="printSelectedCustomers()"
+            >
+                🖨️ Print Selected
+            </button>
+
+        </div>
+    `);
+}
+
+/* =========================================================
+   SELECT PRINT CUSTOMERS
+========================================================= */
+
+function selectAllPrintCustomers(
+    checked
+) {
+
+    document
+        .querySelectorAll(
+            'input[name="printCustomer"]'
+        )
+        .forEach(
+            checkbox =>
+                checkbox.checked =
+                    checked
+        );
+}
+
+/* =========================================================
+   PRINT SELECTED CUSTOMERS
+========================================================= */
+
+function printSelectedCustomers() {
+
+    const ids =
+        Array.from(
+            document.querySelectorAll(
+                'input[name="printCustomer"]:checked'
+            )
+        )
+        .map(
+            checkbox =>
+                checkbox.value
+        );
+
+    if (!ids.length) {
+
+        toast(
+            "Select at least one customer.",
+            "error"
+        );
+
+        return;
+    }
+
+    closeModal();
 
     const win =
         window.open(
@@ -5404,17 +4590,15 @@ function printReport() {
             "_blank"
         );
 
-
     if (!win) {
 
-        showToast(
-            "Please allow pop-ups to print.",
-            "!"
+        toast(
+            "Please allow pop-ups.",
+            "error"
         );
 
         return;
     }
-
 
     win.document.write(`
 
@@ -5423,44 +4607,113 @@ function printReport() {
         <head>
 
             <title>
-                Al Jefoon Tents — Customer Report
+                Al Jefoon Tents - Customer Statements
             </title>
 
             <style>
 
+                * {
+                    box-sizing: border-box;
+                }
+
                 body {
-                    font-family:Arial,sans-serif;
-                    padding:20px;
+                    font-family:
+                        Arial,
+                        sans-serif;
+
+                    margin:
+                        15mm;
+                }
+
+                .statement {
+                    page-break-after:
+                        always;
+                }
+
+                .statement:last-child {
+                    page-break-after:
+                        auto;
                 }
 
                 h1 {
-                    margin:0 0 5px;
+                    margin-bottom:
+                        4px;
                 }
 
-                p {
-                    color:#666;
-                    margin:0 0 20px;
+                .brand {
+                    font-weight:
+                        bold;
+
+                    font-size:
+                        20px;
+
+                    border-bottom:
+                        3px solid #fcc224;
+
+                    padding-bottom:
+                        10px;
+                }
+
+                .summary {
+                    display:
+                        flex;
+
+                    gap:
+                        10px;
+
+                    margin:
+                        15px 0;
+                }
+
+                .box {
+                    flex:
+                        1;
+
+                    border:
+                        1px solid #ddd;
+
+                    padding:
+                        10px;
                 }
 
                 table {
-                    width:100%;
-                    border-collapse:collapse;
+                    width:
+                        100%;
+
+                    border-collapse:
+                        collapse;
                 }
 
-                th,td {
-                    border:1px solid #ddd;
-                    padding:8px;
-                    text-align:left;
-                    font-size:11px;
+                th,
+                td {
+                    border:
+                        1px solid #ddd;
+
+                    padding:
+                        7px;
+
+                    font-size:
+                        11px;
                 }
 
                 th {
-                    background:#f1f1f1;
+                    background:
+                        #f4f4f4;
                 }
 
-                @page {
-                    size:A4 landscape;
-                    margin:10mm;
+                .receivable {
+                    border-left:
+                        5px solid #1f9d55;
+                }
+
+                .payable {
+                    border-left:
+                        5px solid #d93025;
+                }
+
+                .right {
+                    text-align:
+                        right;
                 }
 
             </style>
@@ -5469,29 +4722,169 @@ function printReport() {
 
         <body>
 
-            <h1>
-                Al Jefoon Tents
-            </h1>
+            ${ids.map(
+                id => {
 
-            <p>
-                Customer Account Summary —
-                ${formatDate(todayISO())}
-            </p>
+                    const customer =
+                        getCustomer(id);
 
-            ${table.outerHTML}
+                    const totals =
+                        getCustomerTotals(id);
+
+                    const statement =
+                        buildStatement(id);
+
+                    return `
+
+                        <section class="statement">
+
+                            <div class="brand">
+                                AL JEFOON TENTS
+                            </div>
+
+                            <h1>
+                                Customer Statement
+                            </h1>
+
+                            <strong>
+                                ${escapeHTML(
+                                    customer.name
+                                )}
+                            </strong>
+
+                            ${
+                                customer.company
+                                    ? `<div>
+                                        ${escapeHTML(
+                                            customer.company
+                                        )}
+                                       </div>`
+                                    : ""
+                            }
+
+                            <div class="summary">
+
+                                <div class="box receivable">
+
+                                    🟢 RECEIVABLE
+
+                                    <strong>
+                                        ${money(
+                                            totals.receivable
+                                        )}
+                                    </strong>
+
+                                </div>
+
+                                <div class="box payable">
+
+                                    🔴 PAYABLE
+
+                                    <strong>
+                                        ${money(
+                                            totals.payable
+                                        )}
+                                    </strong>
+
+                                </div>
+
+                            </div>
+
+                            <table>
+
+                                <thead>
+
+                                    <tr>
+
+                                        <th>Date</th>
+                                        <th>Description</th>
+                                        <th>Direction</th>
+                                        <th>Reference</th>
+                                        <th>Amount</th>
+                                        <th>Receivable</th>
+                                        <th>Payable</th>
+
+                                    </tr>
+
+                                </thead>
+
+                                <tbody>
+
+                                    ${statement.map(
+                                        row => `
+
+                                            <tr>
+
+                                                <td>
+                                                    ${formatDate(
+                                                        row.date
+                                                    )}
+                                                </td>
+
+                                                <td>
+                                                    ${escapeHTML(
+                                                        row.description ||
+                                                        ""
+                                                    )}
+                                                </td>
+
+                                                <td>
+                                                    ${
+                                                        row.direction ===
+                                                        PAYABLE
+                                                            ? "🔴 PAYABLE"
+                                                            : "🟢 RECEIVABLE"
+                                                    }
+                                                </td>
+
+                                                <td>
+                                                    ${escapeHTML(
+                                                        row.reference ||
+                                                        "-"
+                                                    )}
+                                                </td>
+
+                                                <td class="right">
+                                                    ${money(
+                                                        row.amount
+                                                    )}
+                                                </td>
+
+                                                <td class="right">
+                                                    ${money(
+                                                        row.receivable ||
+                                                        0
+                                                    )}
+                                                </td>
+
+                                                <td class="right">
+                                                    ${money(
+                                                        row.payable ||
+                                                        0
+                                                    )}
+                                                </td>
+
+                                            </tr>
+                                        `
+                                    ).join("")}
+
+                                </tbody>
+
+                            </table>
+
+                        </section>
+                    `;
+                }
+            ).join("")}
 
             <script>
 
-                window.onload=function(){
+                window.onload =
+                    function () {
 
-                    setTimeout(
-                        function(){
-                            window.print();
-                        },
-                        300
-                    );
+                        window.print();
 
-                };
+                    };
 
             <\/script>
 
@@ -5500,298 +4893,20 @@ function printReport() {
         </html>
     `);
 
-
     win.document.close();
 }
-
 
 /* =========================================================
    BACKUP
 ========================================================= */
 
-function renderBackup() {
-
-    appContent.innerHTML = `
-
-        <div class="page-header">
-
-            <div>
-
-                <h1>Backup & Sync</h1>
-
-                <p>
-                    Keep a safe copy of your customer account data.
-                </p>
-
-            </div>
-
-        </div>
-
-
-        <div class="dashboard-grid">
-
-            <div class="card card-padding">
-
-                <div class="stat-icon">
-                    ⇩
-                </div>
-
-                <h3
-                    style="
-                        margin:14px 0 6px;
-                    "
-                >
-                    Download Backup
-                </h3>
-
-                <p
-                    style="
-                        color:var(--muted);
-                        font-size:12px;
-                        line-height:1.6;
-                    "
-                >
-                    Download all customers,
-                    transactions and cheques as
-                    a JSON backup file.
-                </p>
-
-                <button
-                    class="primary-button"
-                    id="downloadBackup"
-                >
-                    Download Backup
-                </button>
-
-            </div>
-
-
-            <div class="card card-padding">
-
-                <div class="stat-icon">
-                    ↑
-                </div>
-
-                <h3
-                    style="
-                        margin:14px 0 6px;
-                    "
-                >
-                    Restore Backup
-                </h3>
-
-                <p
-                    style="
-                        color:var(--muted);
-                        font-size:12px;
-                        line-height:1.6;
-                    "
-                >
-                    Restore a previously downloaded
-                    JSON backup file.
-                </p>
-
-                <input
-                    id="restoreFile"
-                    type="file"
-                    accept=".json,application/json"
-                    class="form-control"
-                >
-
-            </div>
-
-
-            <div class="card card-padding">
-
-                <div class="stat-icon">
-                    ☁
-                </div>
-
-                <h3
-                    style="
-                        margin:14px 0 6px;
-                    "
-                >
-                    Google Sheets Backup
-                </h3>
-
-                <p
-                    style="
-                        color:var(--muted);
-                        font-size:12px;
-                        line-height:1.6;
-                    "
-                >
-                    The app is prepared for a
-                    Google Sheets backup connection.
-                    We can add the Apps Script endpoint
-                    in the next integration step.
-                </p>
-
-                <button
-                    class="secondary-button"
-                    id="googleSheetsSetup"
-                >
-                    Google Sheets Setup
-                </button>
-
-            </div>
-
-        </div>
-
-
-        <div class="card card-padding"
-             style="margin-top:20px;">
-
-            <div class="card-title">
-                Local Data Status
-            </div>
-
-            <div class="card-subtitle">
-                Your current browser storage
-            </div>
-
-
-            <div
-                style="
-                    display:grid;
-                    grid-template-columns:
-                        repeat(3,minmax(0,1fr));
-                    gap:12px;
-                    margin-top:17px;
-                "
-            >
-
-                ${miniInfo(
-                    "Customers",
-                    appData.customers.length
-                )}
-
-                ${miniInfo(
-                    "Transactions",
-                    appData.transactions.length
-                )}
-
-                ${miniInfo(
-                    "Cheques",
-                    appData.cheques.length
-                )}
-
-            </div>
-
-        </div>
-    `;
-
-
-    document
-        .getElementById(
-            "downloadBackup"
-        )
-        ?.addEventListener(
-            "click",
-            downloadBackup
-        );
-
-
-    document
-        .getElementById(
-            "restoreFile"
-        )
-        ?.addEventListener(
-            "change",
-            restoreBackup
-        );
-
-
-    document
-        .getElementById(
-            "googleSheetsSetup"
-        )
-        ?.addEventListener(
-            "click",
-            () => {
-
-                showToast(
-                    "Google Sheets connection will be configured in the next step."
-                );
-            }
-        );
-}
-
-
-/* =========================================================
-   MINI INFO
-========================================================= */
-
-function miniInfo(
-    label,
-    value
-) {
-
-    return `
-
-        <div
-            style="
-                padding:13px;
-                border:1px solid var(--border);
-                border-radius:10px;
-            "
-        >
-
-            <div
-                style="
-                    color:var(--muted);
-                    font-size:10px;
-                    font-weight:700;
-                "
-            >
-                ${escapeHTML(label)}
-            </div>
-
-            <div
-                style="
-                    margin-top:5px;
-                    font-size:19px;
-                    font-weight:850;
-                "
-            >
-                ${escapeHTML(
-                    String(value)
-                )}
-            </div>
-
-        </div>
-    `;
-}
-
-
-/* =========================================================
-   DOWNLOAD BACKUP
-========================================================= */
-
-function downloadBackup() {
-
-    const backup = {
-
-        application:
-            "Al Jefoon Tents Customer Statements",
-
-        version:
-            "1.0",
-
-        exportedAt:
-            new Date().toISOString(),
-
-        data:
-            appData
-    };
-
+function exportBackup() {
 
     const blob =
         new Blob(
             [
                 JSON.stringify(
-                    backup,
+                    state,
                     null,
                     2
                 )
@@ -5802,138 +4917,111 @@ function downloadBackup() {
             }
         );
 
-
     const url =
         URL.createObjectURL(
             blob
         );
 
-
-    const link =
+    const a =
         document.createElement(
             "a"
         );
 
-    link.href =
-        url;
+    a.href = url;
 
-    link.download =
-        `AlJefoon-Customer-Statements-${todayISO()}.json`;
+    a.download =
+        `al-jefoon-customer-statements-${today()}.json`;
 
-
-    document.body.appendChild(
-        link
-    );
-
-    link.click();
-
-    link.remove();
-
+    a.click();
 
     URL.revokeObjectURL(
         url
     );
 
-
-    showToast(
+    toast(
         "Backup downloaded successfully."
     );
 }
-
 
 /* =========================================================
    RESTORE BACKUP
 ========================================================= */
 
-function restoreBackup(event) {
+function restoreBackup(
+    event
+) {
 
     const file =
         event.target.files?.[0];
 
-
-    if (!file) return;
-
+    if (!file) {
+        return;
+    }
 
     const reader =
         new FileReader();
 
-
     reader.onload =
-        function() {
+        function () {
 
             try {
 
-                const backup =
+                const imported =
                     JSON.parse(
                         reader.result
                     );
 
-
-                const restored =
-                    backup.data ||
-                    backup;
-
-
                 if (
+                    !imported ||
                     !Array.isArray(
-                        restored.customers
+                        imported.customers
                     ) ||
                     !Array.isArray(
-                        restored.transactions
-                    ) ||
-                    !Array.isArray(
-                        restored.cheques
+                        imported.transactions
                     )
                 ) {
 
                     throw new Error(
-                        "Invalid backup format"
+                        "Invalid backup file."
                     );
                 }
 
-
                 const confirmed =
-                    window.confirm(
-                        "Restore this backup? Current local data will be replaced."
+                    confirm(
+                        "Restore this backup?\n\nCurrent data will be replaced."
                     );
 
-
                 if (!confirmed) {
-
-                    event.target.value = "";
-
                     return;
                 }
 
+                state = {
 
-                appData = {
+                    customers:
+                        imported.customers,
 
-                    ...createEmptyData(),
+                    transactions:
+                        imported.transactions,
 
-                    ...restored,
+                    cheques:
+                        Array.isArray(
+                            imported.cheques
+                        )
+                            ? imported.cheques
+                            : [],
 
-                    settings: {
-
-                        ...createEmptyData()
-                            .settings,
-
-                        ...(restored.settings || {})
-                    }
+                    settings:
+                        imported.settings ||
+                        {}
                 };
 
+                save();
 
-                saveData();
-
-
-                showToast(
+                toast(
                     "Backup restored successfully."
                 );
 
-
-                renderView(
-                    currentView
-                );
-
+                render();
 
             } catch (error) {
 
@@ -5941,21 +5029,17 @@ function restoreBackup(event) {
                     error
                 );
 
-                showToast(
-                    "The selected file is not a valid backup.",
-                    "!"
+                toast(
+                    "Invalid backup file.",
+                    "error"
                 );
             }
-
-            event.target.value = "";
         };
-
 
     reader.readAsText(
         file
     );
 }
-
 
 /* =========================================================
    SETTINGS
@@ -5963,332 +5047,604 @@ function restoreBackup(event) {
 
 function renderSettings() {
 
-    const settings =
-        appData.settings;
-
-
-    appContent.innerHTML = `
+    return `
 
         <div class="page-header">
 
             <div>
 
-                <h1>Settings</h1>
+                <h1>
+                    Settings
+                </h1>
 
                 <p>
-                    Configure the customer statement application.
+                    Application settings and data
                 </p>
 
             </div>
 
         </div>
 
+        <div class="settings-grid">
 
-        <div class="card card-padding">
+            <div class="card">
 
-            <form id="settingsForm">
+                <h2>
+                    💾 Backup & Restore
+                </h2>
 
-                <div class="form-grid">
+                <p>
+                    Keep a copy of your customer,
+                    transaction and cheque data.
+                </p>
 
-                    <div class="form-group">
-
-                        <label class="form-label">
-                            Company Name
-                        </label>
-
-                        <input
-                            class="form-control"
-                            id="companyNameSetting"
-                            value="${escapeAttribute(
-                                settings.companyName
-                            )}"
-                        >
-
-                    </div>
-
-
-                    <div class="form-group">
-
-                        <label class="form-label">
-                            Currency
-                        </label>
-
-                        <input
-                            class="form-control"
-                            id="currencySetting"
-                            value="${escapeAttribute(
-                                settings.currency
-                            )}"
-                            maxlength="5"
-                        >
-
-                    </div>
-
-
-                    <div class="form-group">
-
-                        <label class="form-label">
-                            Cheque Alert Days
-                        </label>
-
-                        <input
-                            class="form-control"
-                            id="notificationDaysSetting"
-                            type="number"
-                            min="0"
-                            max="30"
-                            value="${Number(
-                                settings.notificationDays
-                            )}"
-                        >
-
-                        <div class="form-help">
-                            Example: 5 means the app alerts you from
-                            five days before cheque clearance.
-                        </div>
-
-                    </div>
-
-                </div>
-
-
-                <div class="modal-footer">
+                <div class="settings-actions">
 
                     <button
-                        type="submit"
-                        class="primary-button"
+                        class="btn primary"
+                        onclick="exportBackup()"
                     >
-                        Save Settings
+                        ⬇️ Download Backup
                     </button>
+
+                    <label
+                        class="btn"
+                    >
+                        ⬆️ Restore Backup
+
+                        <input
+                            type="file"
+                            accept=".json,application/json"
+                            onchange="restoreBackup(event)"
+                            hidden
+                        >
+
+                    </label>
 
                 </div>
 
-            </form>
-
-        </div>
-
-
-        <div class="card card-padding"
-             style="margin-top:20px;">
-
-            <div class="card-title">
-                Data Management
             </div>
 
-            <div class="card-subtitle">
-                Local application information
-            </div>
+            <div class="card">
 
+                <h2>
+                    ☁️ Google Sheets
+                </h2>
 
-            <div
-                style="
-                    margin-top:16px;
-                    color:var(--muted);
-                    font-size:12px;
-                    line-height:1.7;
-                "
-            >
+                <p>
+                    Google Sheets synchronization
+                    can be connected in the next
+                    integration stage.
+                </p>
 
-                Customers:
-                <strong>
-                    ${appData.customers.length}
-                </strong>
-
-                <br>
-
-                Transactions:
-                <strong>
-                    ${appData.transactions.length}
-                </strong>
-
-                <br>
-
-                Cheques:
-                <strong>
-                    ${appData.cheques.length}
-                </strong>
+                <button
+                    class="btn"
+                    onclick="toast('Google Sheets integration will be connected in the next stage.')"
+                >
+                    Configure Backup
+                </button>
 
             </div>
 
         </div>
     `;
-
-
-    document
-        .getElementById(
-            "settingsForm"
-        )
-        ?.addEventListener(
-            "submit",
-            saveSettings
-        );
 }
-
 
 /* =========================================================
-   SAVE SETTINGS
+   REPORTS
 ========================================================= */
 
-function saveSettings(event) {
+function renderReports() {
 
-    event.preventDefault();
+    let receivable = 0;
+    let payable = 0;
 
+    state.customers.forEach(
+        customer => {
 
-    appData.settings.companyName =
-        document
-            .getElementById(
-                "companyNameSetting"
-            )
-            .value
-            .trim() ||
-        "Al Jefoon Tents";
-
-
-    appData.settings.currency =
-        document
-            .getElementById(
-                "currencySetting"
-            )
-            .value
-            .trim() ||
-        "AED";
-
-
-    appData.settings.notificationDays =
-        Number(
-            document
-                .getElementById(
-                    "notificationDaysSetting"
-                )
-                .value || 5
-        );
-
-
-    saveData();
-
-
-    showToast(
-        "Settings saved."
-    );
-
-
-    renderView(
-        "settings"
-    );
-}
-
-
-/* =========================================================
-   MODAL
-========================================================= */
-
-function openModal(
-    title,
-    subtitle,
-    body
-) {
-
-    modalTitle.textContent =
-        title;
-
-    modalSubtitle.textContent =
-        subtitle || "";
-
-    modalBody.innerHTML =
-        body;
-
-
-    modalOverlay.classList.remove(
-        "hidden"
-    );
-
-
-    document.body.style.overflow =
-        "hidden";
-}
-
-
-function closeModal() {
-
-    modalOverlay.classList.add(
-        "hidden"
-    );
-
-
-    modalBody.innerHTML =
-        "";
-
-
-    document.body.style.overflow =
-        "";
-}
-
-
-/* =========================================================
-   TOAST
-========================================================= */
-
-function showToast(
-    message,
-    icon = "✓"
-) {
-
-    clearTimeout(
-        toastTimer
-    );
-
-
-    toastIcon.textContent =
-        icon;
-
-    toastMessage.textContent =
-        message;
-
-
-    toast.classList.add(
-        "show"
-    );
-
-
-    toastTimer =
-        setTimeout(
-            () => {
-
-                toast.classList.remove(
-                    "show"
+            const totals =
+                getCustomerTotals(
+                    customer.id
                 );
 
-            },
-            3000
+            receivable +=
+                totals.receivable;
+
+            payable +=
+                totals.payable;
+        }
+    );
+
+    return `
+
+        <div class="page-header">
+
+            <div>
+
+                <h1>
+                    Reports
+                </h1>
+
+                <p>
+                    Receivables and payables overview
+                </p>
+
+            </div>
+
+        </div>
+
+        <div class="stats-grid">
+
+            <div class="stat-card receivable">
+
+                <div class="stat-icon">
+                    🟢
+                </div>
+
+                <div>
+
+                    <span>
+                        Total Receivable
+                    </span>
+
+                    <strong>
+                        ${money(
+                            receivable
+                        )}
+                    </strong>
+
+                </div>
+
+            </div>
+
+            <div class="stat-card payable">
+
+                <div class="stat-icon">
+                    🔴
+                </div>
+
+                <div>
+
+                    <span>
+                        Total Payable
+                    </span>
+
+                    <strong>
+                        ${money(
+                            payable
+                        )}
+                    </strong>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="card">
+
+            <div class="card-header">
+
+                <h2>
+                    Customer Position
+                </h2>
+
+            </div>
+
+            <div class="table-wrapper">
+
+                <table class="data-table">
+
+                    <thead>
+
+                        <tr>
+
+                            <th>
+                                Customer
+                            </th>
+
+                            <th>
+                                🟢 Receivable
+                            </th>
+
+                            <th>
+                                🔴 Payable
+                            </th>
+
+                            <th>
+                                Net Position
+                            </th>
+
+                        </tr>
+
+                    </thead>
+
+                    <tbody>
+
+                        ${state.customers.map(
+                            customer => {
+
+                                const totals =
+                                    getCustomerTotals(
+                                        customer.id
+                                    );
+
+                                return `
+
+                                    <tr>
+
+                                        <td>
+                                            <strong>
+                                                ${escapeHTML(
+                                                    customer.name
+                                                )}
+                                            </strong>
+                                        </td>
+
+                                        <td>
+                                            ${money(
+                                                totals.receivable
+                                            )}
+                                        </td>
+
+                                        <td>
+                                            ${money(
+                                                totals.payable
+                                            )}
+                                        </td>
+
+                                        <td>
+
+                                            ${
+                                                totals.receivable >=
+                                                totals.payable
+                                                    ? `
+                                                        <span class="direction-badge receivable">
+                                                            🟢 ${money(
+                                                                totals.receivable -
+                                                                totals.payable
+                                                            )}
+                                                        </span>
+                                                      `
+                                                    : `
+                                                        <span class="direction-badge payable">
+                                                            🔴 ${money(
+                                                                totals.payable -
+                                                                totals.receivable
+                                                            )}
+                                                        </span>
+                                                      `
+                                            }
+
+                                        </td>
+
+                                    </tr>
+                                `;
+                            }
+                        ).join("")}
+
+                    </tbody>
+
+                </table>
+
+            </div>
+
+        </div>
+    `;
+}
+
+/* =========================================================
+   PRINT PAGE
+========================================================= */
+
+function renderPrintPage() {
+
+    return `
+
+        <div class="page-header">
+
+            <div>
+
+                <h1>
+                    Print Statements
+                </h1>
+
+                <p>
+                    Select one, several or all customers.
+                </p>
+
+            </div>
+
+            <button
+                class="btn primary"
+                onclick="printSelectedStatements()"
+            >
+                🖨️ Select Statements
+            </button>
+
+        </div>
+
+        <div class="card">
+
+            <div class="empty-state">
+
+                <div class="empty-icon">
+                    🖨️
+                </div>
+
+                <h3>
+                    Print Customer Statements
+                </h3>
+
+                <p>
+                    Choose the customers you want
+                    to print.
+                </p>
+
+                <button
+                    class="btn primary"
+                    onclick="printSelectedStatements()"
+                >
+                    Choose Customers
+                </button>
+
+            </div>
+
+        </div>
+    `;
+}
+
+/* =========================================================
+   NAVIGATION
+========================================================= */
+
+function navigate(view) {
+
+    currentView =
+        view;
+
+    currentCustomerId =
+        null;
+
+    render();
+}
+
+/* =========================================================
+   OPEN CUSTOMER
+========================================================= */
+
+function openCustomer(
+    customerId
+) {
+
+    currentCustomerId =
+        customerId;
+
+    currentView =
+        "customer";
+
+    render();
+}
+
+/* =========================================================
+   RENDER
+========================================================= */
+
+function render() {
+
+    const content =
+        $("appContent");
+
+    if (!content) {
+
+        console.error(
+            "appContent element not found."
+        );
+
+        return;
+    }
+
+    switch (
+        currentView
+    ) {
+
+        case "customers":
+
+            content.innerHTML =
+                renderCustomers();
+
+            break;
+
+        case "transactions":
+
+            content.innerHTML =
+                renderTransactions();
+
+            break;
+
+        case "cheques":
+
+            content.innerHTML =
+                renderCheques();
+
+            break;
+
+        case "print":
+
+            content.innerHTML =
+                renderPrintPage();
+
+            break;
+
+        case "reports":
+
+            content.innerHTML =
+                renderReports();
+
+            break;
+
+        case "settings":
+
+        case "backup":
+
+            content.innerHTML =
+                renderSettings();
+
+            break;
+
+        case "customer":
+
+            content.innerHTML =
+                renderCustomerStatement(
+                    currentCustomerId
+                );
+
+            break;
+
+        case "dashboard":
+
+        default:
+
+            content.innerHTML =
+                renderDashboard();
+
+            break;
+    }
+
+    updatePageTitle();
+
+    updateNavigation();
+
+    updateAlertCount();
+}
+
+/* =========================================================
+   PAGE TITLE
+========================================================= */
+
+function updatePageTitle() {
+
+    const titles = {
+
+        dashboard:
+            "Dashboard",
+
+        customers:
+            "Customers",
+
+        transactions:
+            "Transactions",
+
+        cheques:
+            "Cheque Register",
+
+        print:
+            "Print Statements",
+
+        reports:
+            "Reports",
+
+        settings:
+            "Settings",
+
+        backup:
+            "Backup & Sync",
+
+        customer:
+            "Customer Statement"
+    };
+
+    const title =
+        titles[currentView] ||
+        "Customer Statements";
+
+    const pageTitle =
+        $("pageTitle");
+
+    if (pageTitle) {
+
+        pageTitle.textContent =
+            title;
+    }
+}
+
+/* =========================================================
+   NAVIGATION HIGHLIGHT
+========================================================= */
+
+function updateNavigation() {
+
+    document
+        .querySelectorAll(
+            "[data-view]"
+        )
+        .forEach(
+            element => {
+
+                const view =
+                    element.dataset.view;
+
+                element.classList.toggle(
+                    "active",
+                    view ===
+                        currentView ||
+                    (
+                        currentView ===
+                            "customer" &&
+                        view ===
+                            "customers"
+                    )
+                );
+            }
         );
 }
 
+/* =========================================================
+   ALERT COUNT
+========================================================= */
+
+function updateAlertCount() {
+
+    const count =
+        getUpcomingCheques()
+            .length;
+
+    const badge =
+        $("alertCount");
+
+    if (badge) {
+
+        badge.textContent =
+            count;
+
+        badge.style.display =
+            count
+                ? ""
+                : "none";
+    }
+}
 
 /* =========================================================
    THEME
 ========================================================= */
 
-function loadTheme() {
+function initializeTheme() {
 
-    const theme =
+    const saved =
         localStorage.getItem(
             THEME_KEY
         );
 
-
     if (
-        theme === "dark"
+        saved ===
+        "dark"
     ) {
 
         document.body.classList.add(
             "dark"
         );
     }
-
-
-    updateThemeButton();
 }
-
 
 function toggleTheme() {
 
@@ -6296,222 +5652,78 @@ function toggleTheme() {
         "dark"
     );
 
-
-    const dark =
-        document.body.classList.contains(
-            "dark"
-        );
-
-
     localStorage.setItem(
         THEME_KEY,
-        dark
+        document.body.classList.contains(
+            "dark"
+        )
             ? "dark"
             : "light"
     );
-
-
-    updateThemeButton();
 }
 
+/* =========================================================
+   MOBILE SIDEBAR
+========================================================= */
 
-function updateThemeButton() {
+function toggleSidebar() {
 
-    const dark =
-        document.body.classList.contains(
-            "dark"
+    const sidebar =
+        $("sidebar");
+
+    if (sidebar) {
+
+        sidebar.classList.toggle(
+            "open"
         );
-
-
-    themeIcon.textContent =
-        dark
-            ? "☀"
-            : "☾";
-
-    themeText.textContent =
-        dark
-            ? "Light Mode"
-            : "Dark Mode";
+    }
 }
-
 
 /* =========================================================
-   MOBILE MENU
+   EVENT DELEGATION
 ========================================================= */
 
-function openMobileMenu() {
+document.addEventListener(
+    "click",
+    function(event) {
 
-    sidebar.classList.add(
-        "open"
-    );
+        const navigation =
+            event.target.closest(
+                "[data-view]"
+            );
 
-    mobileOverlay.classList.add(
-        "show"
-    );
-}
+        if (navigation) {
 
+            event.preventDefault();
 
-function closeMobileMenu() {
+            navigate(
+                navigation.dataset.view
+            );
 
-    sidebar.classList.remove(
-        "open"
-    );
+            return;
+        }
 
-    mobileOverlay.classList.remove(
-        "show"
-    );
-}
+        const action =
+            event.target.closest(
+                "[data-view-action]"
+            );
 
+        if (action) {
 
-/* =========================================================
-   ALERT BADGES
-========================================================= */
+            event.preventDefault();
 
-function updateAlertBadges() {
+            const view =
+                action.dataset.viewAction;
 
-    const count =
-        getChequeAlerts().length;
+            navigate(view);
 
-
-    notificationBadge.textContent =
-        count;
-
-    notificationBadge.classList.toggle(
-        "hidden",
-        count === 0
-    );
-
-
-    chequeAlertBadge.textContent =
-        count;
-
-    chequeAlertBadge.classList.toggle(
-        "hidden",
-        count === 0
-    );
-}
-
+            return;
+        }
+    }
+);
 
 /* =========================================================
    BROWSER NOTIFICATIONS
-========================================================= */
-
-function checkChequeNotifications() {
-
-    const alerts =
-        getChequeAlerts();
-
-
-    if (
-        !alerts.length
-    ) {
-        return;
-    }
-
-
-    if (
-        !("Notification" in window)
-    ) {
-        return;
-    }
-
-
-    if (
-        Notification.permission ===
-        "granted"
-    ) {
-
-        sendChequeNotifications(
-            alerts
-        );
-
-        return;
-    }
-
-
-    /*
-       We do not automatically request permission
-       on page load. The browser can block this.
-       The in-app alerts remain active regardless.
-    */
-}
-
-
-/* =========================================================
-   SEND CHEQUE NOTIFICATIONS
-========================================================= */
-
-function sendChequeNotifications(
-    alerts
-) {
-
-    const notified =
-        JSON.parse(
-            localStorage.getItem(
-                "alJefoonChequeNotificationsV1"
-            ) || "{}"
-        );
-
-
-    alerts.forEach(
-        alert => {
-
-            const key =
-                `${alert.cheque.id}_${alert.cheque.clearanceDate}`;
-
-
-            if (
-                notified[key]
-            ) {
-                return;
-            }
-
-
-            try {
-
-                new Notification(
-                    "Al Jefoon Tents — Cheque Alert",
-                    {
-
-                        body:
-                            `${alert.title}: ` +
-                            `${alert.cheque.chequeNumber} — ` +
-                            `${formatMoney(
-                                alert.cheque.amount
-                            )}`,
-
-                        tag:
-                            key
-                    }
-                );
-
-
-                notified[key] =
-                    new Date().toISOString();
-
-
-            } catch (error) {
-
-                console.warn(
-                    "Notification failed:",
-                    error
-                );
-            }
-        }
-    );
-
-
-    localStorage.setItem(
-        "alJefoonChequeNotificationsV1",
-        JSON.stringify(
-            notified
-        )
-    );
-}
-
-
-/* =========================================================
-   REQUEST NOTIFICATIONS
 ========================================================= */
 
 function requestNotificationPermission() {
@@ -6520,341 +5732,189 @@ function requestNotificationPermission() {
         !("Notification" in window)
     ) {
 
-        showToast(
-            "Browser notifications are not supported.",
-            "!"
-        );
+        return;
+    }
+
+    if (
+        Notification.permission ===
+        "default"
+    ) {
+
+        Notification.requestPermission();
+    }
+}
+
+function checkChequeNotifications() {
+
+    if (
+        !("Notification" in window)
+    ) {
 
         return;
     }
 
-
-    Notification
-        .requestPermission()
-        .then(
-            permission => {
-
-                if (
-                    permission ===
-                    "granted"
-                ) {
-
-                    showToast(
-                        "Cheque notifications enabled."
-                    );
-
-                    sendChequeNotifications(
-                        getChequeAlerts()
-                    );
-
-                } else {
-
-                    showToast(
-                        "Notification permission was not granted.",
-                        "!"
-                    );
-                }
-            }
-        );
-}
-
-
-/* =========================================================
-   UTILITY — CUSTOMER
-========================================================= */
-
-function getCustomer(
-    customerId
-) {
-
-    return appData.customers.find(
-        customer =>
-            customer.id ===
-            customerId
-    );
-}
-
-
-/* =========================================================
-   UTILITY — TRANSACTIONS
-========================================================= */
-
-function getCustomerTransactions(
-    customerId
-) {
-
-    return appData.transactions.filter(
-        transaction =>
-            transaction.customerId ===
-            customerId
-    );
-}
-
-
-/* =========================================================
-   UTILITY — DATE
-========================================================= */
-
-function todayISO() {
-
-    const date =
-        new Date();
-
-
-    const year =
-        date.getFullYear();
-
-
-    const month =
-        String(
-            date.getMonth() + 1
-        ).padStart(2, "0");
-
-
-    const day =
-        String(
-            date.getDate()
-        ).padStart(2, "0");
-
-
-    return (
-        year +
-        "-" +
-        month +
-        "-" +
-        day
-    );
-}
-
-
-function parseDate(
-    value
-) {
-
-    if (!value) {
-        return new Date();
-    }
-
-
     if (
-        /^\d{4}-\d{2}-\d{2}$/.test(
-            value
-        )
+        Notification.permission !==
+        "granted"
     ) {
 
-        const [
-            year,
-            month,
-            day
-        ] =
-            value
-                .split("-")
-                .map(Number);
+        return;
+    }
 
+    const cheques =
+        getUpcomingCheques();
 
-        return new Date(
-            year,
-            month - 1,
-            day
+    const notificationKey =
+        today() +
+        "-" +
+        cheques
+            .map(
+                cheque =>
+                    cheque.id
+            )
+            .join(",");
+
+    const previous =
+        localStorage.getItem(
+            "alJefoonChequeNotification"
         );
-    }
-
-
-    return new Date(value);
-}
-
-
-function startOfDay(
-    date
-) {
-
-    const result =
-        new Date(date);
-
-    result.setHours(
-        0,
-        0,
-        0,
-        0
-    );
-
-    return result;
-}
-
-
-function formatDate(
-    value
-) {
-
-    if (!value) {
-        return "—";
-    }
-
-
-    const date =
-        parseDate(value);
-
 
     if (
-        Number.isNaN(
-            date.getTime()
-        )
+        previous ===
+        notificationKey
     ) {
 
-        return "—";
+        return;
     }
 
+    if (!cheques.length) {
+        return;
+    }
 
-    return new Intl.DateTimeFormat(
-        "en-GB",
+    new Notification(
+        "Al Jefoon Tents - Cheque Alert",
         {
-            day: "2-digit",
-            month: "short",
-            year: "numeric"
+            body:
+                `${cheques.length} cheque(s) ` +
+                `are due within 5 days.`
         }
-    ).format(date);
-}
+    );
 
-
-/* =========================================================
-   UTILITY — MONEY
-========================================================= */
-
-function formatMoney(
-    amount
-) {
-
-    const currency =
-        appData.settings?.currency ||
-        "AED";
-
-
-    const number =
-        Number(amount || 0);
-
-
-    return (
-        currency +
-        " " +
-        number.toLocaleString(
-            "en-AE",
-            {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2
-            }
-        )
+    localStorage.setItem(
+        "alJefoonChequeNotification",
+        notificationKey
     );
 }
 
-
 /* =========================================================
-   UTILITY — INITIALS
+   INITIALIZE
 ========================================================= */
 
-function getInitials(
-    name
-) {
+document.addEventListener(
+    "DOMContentLoaded",
+    function() {
 
-    const parts =
-        String(name || "")
-            .trim()
-            .split(/\s+/)
-            .filter(Boolean);
+        initializeTheme();
 
+        render();
 
-    if (!parts.length) {
-        return "?";
-    }
-
-
-    if (parts.length === 1) {
-
-        return parts[0]
-            .substring(0, 2)
-            .toUpperCase();
-    }
-
-
-    return (
-        parts[0][0] +
-        parts[parts.length - 1][0]
-    ).toUpperCase();
-}
-
-
-/* =========================================================
-   UTILITY — EMPTY STATE
-========================================================= */
-
-function emptyStateHTML(
-    title,
-    message
-) {
-
-    return `
-
-        <div class="empty-state">
-
-            <div class="empty-icon">
-                ▤
-            </div>
-
-            <h3>
-                ${escapeHTML(title)}
-            </h3>
-
-            <p>
-                ${escapeHTML(message)}
-            </p>
-
-        </div>
-    `;
-}
-
-
-/* =========================================================
-   UTILITY — ESCAPE HTML
-========================================================= */
-
-function escapeHTML(
-    value
-) {
-
-    return String(
-        value ?? ""
-    )
-        .replace(
-            /&/g,
-            "&amp;"
-        )
-        .replace(
-            /</g,
-            "&lt;"
-        )
-        .replace(
-            />/g,
-            "&gt;"
-        )
-        .replace(
-            /"/g,
-            "&quot;"
-        )
-        .replace(
-            /'/g,
-            "&#039;"
+        setTimeout(
+            checkChequeNotifications,
+            1000
         );
-}
 
+        /*
+           We do not automatically ask for
+           notification permission because some
+           browsers block automatic permission
+           prompts.
 
-function escapeAttribute(
-    value
-) {
+           User can enable notifications later.
+        */
+    }
+);
 
-    return escapeHTML(
-        value
-    );
-}
+/* =========================================================
+   GLOBAL FUNCTIONS
+========================================================= */
 
+window.navigate =
+    navigate;
+
+window.openCustomer =
+    openCustomer;
+
+window.openCustomerForm =
+    openCustomerForm;
+
+window.saveCustomer =
+    saveCustomer;
+
+window.deleteCustomer =
+    deleteCustomer;
+
+window.openTransactionForm =
+    openTransactionForm;
+
+window.saveTransaction =
+    saveTransaction;
+
+window.editTransaction =
+    editTransaction;
+
+window.deleteTransaction =
+    deleteTransaction;
+
+window.transactionTypeChanged =
+    transactionTypeChanged;
+
+window.paymentMethodChanged =
+    paymentMethodChanged;
+
+window.editCheque =
+    editCheque;
+
+window.deleteCheque =
+    deleteCheque;
+
+window.openChequeForm =
+    openChequeForm;
+
+window.saveStandaloneCheque =
+    saveStandaloneCheque;
+
+window.printStatement =
+    printStatement;
+
+window.printSelectedStatements =
+    printSelectedStatements;
+
+window.selectAllPrintCustomers =
+    selectAllPrintCustomers;
+
+window.printSelectedCustomers =
+    printSelectedCustomers;
+
+window.exportBackup =
+    exportBackup;
+
+window.restoreBackup =
+    restoreBackup;
+
+window.toggleTheme =
+    toggleTheme;
+
+window.toggleSidebar =
+    toggleSidebar;
+
+window.closeModal =
+    closeModal;
+
+window.filterCustomers =
+    filterCustomers;
+
+window.requestNotificationPermission =
+    requestNotificationPermission;
 
 /* =========================================================
    END
