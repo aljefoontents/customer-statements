@@ -1618,38 +1618,39 @@ function transactionFormHTML(
                 </label>
 
                 <select
-                    class="form-control"
-                    id="transactionCustomer"
-                    required
-                >
+    class="filter-select"
+    id="transactionTypeFilter"
+>
 
-                    <option value="">
-                        Select customer
-                    </option>
+    <option value="all">
+        All Types
+    </option>
 
-                    ${appData.customers
-                        .map(
-                            customer =>
-                                `
-                                <option
-                                    value="${customer.id}"
-                                    ${
-                                        customer.id ===
-                                        customerId
-                                            ? "selected"
-                                            : ""
-                                    }
-                                >
-                                    ${escapeHTML(
-                                        customer.name
-                                    )}
-                                </option>
-                                `
-                        )
-                        .join("")
-                    }
+    <option value="sale">
+        Credit Sales
+    </option>
 
-                </select>
+    <option value="payment_received">
+        Payments Received
+    </option>
+
+    <option value="purchase">
+        Credit Purchases
+    </option>
+
+    <option value="payment_made">
+        Payments Made
+    </option>
+
+    <option value="debit">
+        Debit Adjustments
+    </option>
+
+    <option value="credit">
+        Credit Adjustments
+    </option>
+
+</select>
 
             </div>
 
