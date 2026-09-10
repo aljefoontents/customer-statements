@@ -616,12 +616,12 @@ function renderDashboard() {
                 "Customers owing Al Jefoon"
             )}
 
-            ${statCard(
-                "Customer Credits",
-                formatMoney(totalCredit),
-                "↙",
-                "Credit balances"
-            )}
+           ${statCard(
+    "Payable",
+    formatMoney(totalCredit),
+    "↙",
+    "Amounts owed to suppliers"
+)}
 
             ${statCard(
                 "Outstanding Cheques",
