@@ -852,110 +852,56 @@ function statCard(
 
 function getCustomerBalance(customerId) {
 
-    const customer =
-        getCustomer(customerId);
+    const customer = getCustomer(customerId);
 
     if (!customer) {
         return 0;
     }
 
-    let balance =
-        Number(customer.openingBalance || 0);
-
+    let balance = Number(customer.openingBalance || 0);
 
     appData.transactions
-        .filter(
-            transaction =>
-                transaction.customerId ===
-                customerId
+        .filter(transaction =>
+            transaction.customerId === customerId
         )
         .forEach(transaction => {
 
-            const amount =
-                Number(transaction.amount || 0);
+            const amount = Number(transaction.amount || 0);
 
+            switch (transaction.type) {
 
-            /* =========================================
-               RECEIVABLE
-            ========================================= */
+                case "sale":
+                    // Customer owes Al Jefoon
+                    balance += amount;
+                    break;
 
-            if (
-                transaction.type ===
-                "sale"
-            ) {
+                case "payment_received":
+                    // Customer paid Al Jefoon
+                    balance -= amount;
+                    break;
 
-                // Customer owes Al Jefoon
-                balance += amount;
+                case "purchase":
+                    // Al Jefoon owes supplier
+                    balance -= amount;
+                    break;
 
+                case "payment_made":
+                    // Al Jefoon paid supplier
+                    balance += amount;
+                    break;
+
+                case "debit":
+                    balance += amount;
+                    break;
+
+                case "credit":
+                    balance -= amount;
+                    break;
             }
-
-
-            else if (
-                transaction.type ===
-                "payment_received"
-            ) {
-
-                // Customer paid Al Jefoon
-                balance -= amount;
-
-            }
-
-
-            /* =========================================
-               PAYABLE
-            ========================================= */
-
-            else if (
-                transaction.type ===
-                "purchase"
-            ) {
-
-                // Al Jefoon owes supplier
-                balance -= amount;
-
-            }
-
-
-            else if (
-                transaction.type ===
-                "payment_made"
-            ) {
-
-                // Al Jefoon paid supplier
-                balance += amount;
-
-            }
-
-
-            /* =========================================
-               ADJUSTMENTS
-            ========================================= */
-
-            else if (
-                transaction.type ===
-                "debit"
-            ) {
-
-                balance += amount;
-
-            }
-
-
-            else if (
-                transaction.type ===
-                "credit"
-            ) {
-
-                balance -= amount;
-
-            }
-
         });
-
 
     return balance;
 }
-
 /* =========================================================
    CUSTOMER BALANCE LIST
 ========================================================= */
