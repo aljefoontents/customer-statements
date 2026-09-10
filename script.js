@@ -36,6 +36,9 @@ let printSelectedCustomers = new Set();
 
 let toastTimer = null;
 
+let editingCustomerId = null;
+let editingTransactionId = null;
+
 
 /* =========================================================
    DEFAULT DATA
@@ -783,12 +786,14 @@ function renderDashboard() {
             () => openCustomerModal()
         );
 
+
     document
         .getElementById("dashboardAddTransaction")
         ?.addEventListener(
             "click",
             () => openTransactionModal()
         );
+
 
     document
         .getElementById("viewAllTransactions")
@@ -797,111 +802,21 @@ function renderDashboard() {
             () => renderView("transactions")
         );
 
+
     document
         .getElementById("viewChequeAlerts")
         ?.addEventListener(
             "click",
             () => renderView("cheques")
         );
+
+
+    attachTransactionActionListeners();
+
+    attachCustomerBalanceListeners();
 }
 
 
-/* =========================================================
-   STAT CARD
-========================================================= */
-
-function statCard(
-    label,
-    value,
-    icon,
-    small
-) {
-
-    return `
-
-        <div class="card stat-card">
-
-            <div class="stat-top">
-
-                <div class="stat-label">
-                    ${escapeHTML(label)}
-                </div>
-
-                <div class="stat-icon">
-                    ${icon}
-                </div>
-
-            </div>
-
-            <div class="stat-value">
-                ${escapeHTML(String(value))}
-            </div>
-
-            <div class="stat-small">
-                ${escapeHTML(small)}
-            </div>
-
-        </div>
-    `;
-}
-
-
-/* =========================================================
-   CUSTOMER BALANCE
-========================================================= */
-
-function getCustomerBalance(customerId) {
-
-    const customer = getCustomer(customerId);
-
-    if (!customer) {
-        return 0;
-    }
-
-    let balance = Number(customer.openingBalance || 0);
-
-    appData.transactions
-        .filter(transaction =>
-            transaction.customerId === customerId
-        )
-        .forEach(transaction => {
-
-            const amount = Number(transaction.amount || 0);
-
-            switch (transaction.type) {
-
-                case "sale":
-                    // Customer owes Al Jefoon
-                    balance += amount;
-                    break;
-
-                case "payment_received":
-                    // Customer paid Al Jefoon
-                    balance -= amount;
-                    break;
-
-                case "purchase":
-                    // Al Jefoon owes supplier
-                    balance -= amount;
-                    break;
-
-                case "payment_made":
-                    // Al Jefoon paid supplier
-                    balance += amount;
-                    break;
-
-                case "debit":
-                    balance += amount;
-                    break;
-
-                case "credit":
-                    balance -= amount;
-                    break;
-            }
-        });
-
-    return balance;
-}
 /* =========================================================
    CUSTOMER BALANCE LIST
 ========================================================= */
@@ -911,126 +826,157 @@ function customerBalanceListHTML(items) {
     if (!items.length) {
 
         return emptyStateHTML(
-            "All Clear",
+            "All Accounts Clear",
             "There are currently no outstanding customer balances."
         );
     }
 
+
     return `
-        <div style="padding:5px 0;">
-            ${items.map(item => {
-                const balance = item.balance;
 
-                const balanceLabel =
-                    balance > 0
-                        ? "RECEIVABLE"
-                        : balance < 0
-                            ? "PAYABLE"
-                            : "SETTLED";
+        <div class="balance-list">
 
-                return `
-                    <button
-                        class="customer-balance-row"
-                        data-customer-id="${item.customer.id}"
-                        style="
-                            width:100%;
-                            border:0;
-                            border-bottom:1px solid var(--border);
-                            background:transparent;
-                            color:var(--text);
-                            padding:13px 18px;
-                            display:flex;
-                            align-items:center;
-                            justify-content:space-between;
-                            gap:10px;
-                            text-align:left;
-                        "
-                    >
-                        <span>
-                            <strong>
-                                ${escapeHTML(item.customer.name)}
-                            </strong>
-                            <small
-                                style="
-                                    display:block;
-                                    margin-top:3px;
-                                    color:var(--muted);
-                                "
+            ${items
+                .map(
+                    item => {
+
+                        const customer =
+                            item.customer;
+
+                        const balance =
+                            item.balance;
+
+                        const isReceivable =
+                            balance > 0;
+
+                        return `
+
+                            <div
+                                class="balance-list-item"
+                                data-customer-id="${customer.id}"
                             >
-                                ${escapeHTML(
-                                    item.customer.phone ||
-                                    "No phone"
-                                )}
-                            </small>
-                        </span>
 
-                        <span
-                            class="amount ${
-                                balance > 0
-                                    ? "positive"
-                                    : balance < 0
-                                        ? "negative"
-                                        : "neutral"
-                            }"
-                        >
-                            ${balanceLabel}
-                            ${formatMoney(
-                                Math.abs(balance)
-                            )}
-                        </span>
-                    </button>
-                `;
-            }).join("")}
+                                <div>
+
+                                    <div class="balance-customer-name">
+                                        ${escapeHTML(
+                                            customer.name
+                                        )}
+                                    </div>
+
+                                    <div class="balance-customer-meta">
+                                        ${
+                                            customer.phone
+                                                ? escapeHTML(
+                                                    customer.phone
+                                                )
+                                                : "No phone number"
+                                        }
+                                    </div>
+
+                                </div>
+
+
+                                <div
+                                    class="balance-value ${
+                                        isReceivable
+                                            ? "positive"
+                                            : "negative"
+                                    }"
+                                >
+
+                                    ${
+                                        isReceivable
+                                            ? "+"
+                                            : "-"
+                                    }
+
+                                    ${formatMoney(
+                                        Math.abs(balance)
+                                    )}
+
+                                </div>
+
+                            </div>
+
+                        `;
+                    }
+                )
+                .join("")
+            }
+
         </div>
+
     `;
 }
 
+
 /* =========================================================
-   CUSTOMER BALANCE CLICK
+   CUSTOMER BALANCE LISTENERS
 ========================================================= */
 
-document.addEventListener(
-    "click",
-    event => {
+function attachCustomerBalanceListeners() {
 
-        const button =
-            event.target.closest(
-                ".customer-balance-row"
+    document
+        .querySelectorAll(
+            ".balance-list-item"
+        )
+        .forEach(item => {
+
+            item.addEventListener(
+                "click",
+                () => {
+
+                    const customerId =
+                        item.dataset.customerId;
+
+                    if (!customerId) {
+                        return;
+                    }
+
+                    selectedCustomerId =
+                        customerId;
+
+                    renderView("customer");
+                }
             );
 
-        if (!button) return;
-
-        const customerId =
-            button.dataset.customerId;
-
-        openCustomerStatement(
-            customerId
-        );
-    }
-);
+        });
+}
 
 
 /* =========================================================
-   CUSTOMERS
+   CUSTOMERS VIEW
 ========================================================= */
 
 function renderCustomers() {
 
     const customers =
-        appData.customers;
+        [...appData.customers]
+            .sort(
+                (a, b) =>
+                    String(a.name || "")
+                        .localeCompare(
+                            String(b.name || "")
+                        )
+            );
+
 
     appContent.innerHTML = `
 
         <div class="page-header">
 
             <div>
+
                 <h1>Customers</h1>
 
                 <p>
-                    Manage customer accounts,
-                    opening balances and contact details.
+                    Manage your customer accounts
+                    and view their statements.
                 </p>
+
             </div>
+
 
             <div class="page-header-actions">
 
@@ -1046,40 +992,51 @@ function renderCustomers() {
         </div>
 
 
-        <div class="card filter-bar">
+        <div class="card">
 
-            <div class="search-box">
+            <div class="card-header">
 
-                <span class="search-icon">
-                    ⌕
-                </span>
+                <div>
 
-                <input
-                    id="customerSearch"
-                    type="search"
-                    placeholder="Search customers..."
-                >
+                    <div class="card-title">
+                        Customer Accounts
+                    </div>
+
+                    <div class="card-subtitle">
+                        ${customers.length}
+                        customer(s)
+                    </div>
+
+                </div>
 
             </div>
 
-        </div>
-
-
-        <div
-            id="customerGrid"
-            class="customer-grid"
-        >
 
             ${
                 customers.length
-                    ? customersHTML(customers)
+                    ? `
+                        <div class="customer-grid">
+
+                            ${customers
+                                .map(
+                                    customer =>
+                                        customerCardHTML(
+                                            customer
+                                        )
+                                )
+                                .join("")
+                            }
+
+                        </div>
+                    `
                     : emptyStateHTML(
-                        "No Customers Yet",
-                        "Add your first customer to begin keeping account statements."
+                        "No Customers",
+                        "Add your first customer account."
                     )
             }
 
         </div>
+
     `;
 
 
@@ -1091,8 +1048,637 @@ function renderCustomers() {
         );
 
 
+    attachCustomerCardListeners();
+}
+
+
+/* =========================================================
+   CUSTOMER CARD
+========================================================= */
+
+function customerCardHTML(customer) {
+
+    const balance =
+        getCustomerBalance(
+            customer.id
+        );
+
+    const transactions =
+        getCustomerTransactions(
+            customer.id
+        );
+
+    const balanceClass =
+        balance > 0
+            ? "positive"
+            : balance < 0
+                ? "negative"
+                : "neutral";
+
+
+    const balanceLabel =
+        balance > 0
+            ? "Receivable"
+            : balance < 0
+                ? "Credit"
+                : "Clear";
+
+
+    return `
+
+        <div
+            class="customer-card"
+            data-customer-id="${customer.id}"
+        >
+
+            <div class="customer-card-top">
+
+                <div>
+
+                    <div class="customer-name">
+                        ${escapeHTML(
+                            customer.name
+                        )}
+                    </div>
+
+                    ${
+                        customer.company
+                            ? `
+                                <div class="customer-company">
+                                    ${escapeHTML(
+                                        customer.company
+                                    )}
+                                </div>
+                            `
+                            : ""
+                    }
+
+                </div>
+
+
+                <div
+                    class="customer-balance ${
+                        balanceClass
+                    }"
+                >
+
+                    <span>
+                        ${balanceLabel}
+                    </span>
+
+                    <strong>
+                        ${formatMoney(
+                            Math.abs(balance)
+                        )}
+                    </strong>
+
+                </div>
+
+            </div>
+
+
+            <div class="customer-card-details">
+
+                ${
+                    customer.phone
+                        ? `
+                            <div>
+                                <span>Phone</span>
+                                ${escapeHTML(
+                                    customer.phone
+                                )}
+                            </div>
+                        `
+                        : ""
+                }
+
+
+                ${
+                    customer.email
+                        ? `
+                            <div>
+                                <span>Email</span>
+                                ${escapeHTML(
+                                    customer.email
+                                )}
+                            </div>
+                        `
+                        : ""
+                }
+
+
+                <div>
+
+                    <span>Transactions</span>
+
+                    ${transactions.length}
+
+                </div>
+
+            </div>
+
+
+            <div class="customer-card-actions">
+
+                <button
+                    class="secondary-button edit-customer-button"
+                    data-customer-id="${customer.id}"
+                >
+                    Edit
+                </button>
+
+
+                <button
+                    class="secondary-button view-statement-button"
+                    data-customer-id="${customer.id}"
+                >
+                    Statement
+                </button>
+
+
+                <button
+                    class="secondary-button danger-action delete-customer-button"
+                    data-customer-id="${customer.id}"
+                >
+                    Delete
+                </button>
+
+            </div>
+
+        </div>
+
+    `;
+}
+/* =========================================================
+   STAT CARD
+========================================================= */
+
+function statCard(
+    label,
+    value,
+    icon,
+    description
+) {
+
+    return `
+
+        <div class="stat-card">
+
+            <div class="stat-icon">
+                ${icon}
+            </div>
+
+            <div class="stat-content">
+
+                <div class="stat-label">
+                    ${escapeHTML(label)}
+                </div>
+
+                <div class="stat-value">
+                    ${value}
+                </div>
+
+                <div class="stat-description">
+                    ${escapeHTML(description)}
+                </div>
+
+            </div>
+
+        </div>
+
+    `;
+}
+
+
+/* =========================================================
+   CUSTOMER BALANCE
+========================================================= */
+
+function getCustomerBalance(
+    customerId
+) {
+
+    const customer =
+        getCustomer(customerId);
+
+    if (!customer) {
+        return 0;
+    }
+
+
+    let balance =
+        Number(
+            customer.openingBalance || 0
+        );
+
+
+    const transactions =
+        getCustomerTransactions(
+            customerId
+        );
+
+
+    transactions.forEach(
+        transaction => {
+
+            const amount =
+                Number(
+                    transaction.amount || 0
+                );
+
+
+            switch (
+                transaction.type
+            ) {
+
+                case "sale":
+                case "debit":
+
+                    balance += amount;
+
+                    break;
+
+
+                case "payment_received":
+                case "credit":
+
+                    balance -= amount;
+
+                    break;
+
+
+                case "purchase":
+
+                    balance -= amount;
+
+                    break;
+
+
+                case "payment_made":
+
+                    balance += amount;
+
+                    break;
+
+            }
+        }
+    );
+
+
+    return balance;
+}
+
+
+/* =========================================================
+   CUSTOMER BALANCE LIST
+========================================================= */
+
+function customerBalanceListHTML(
+    items
+) {
+
+    if (!items.length) {
+
+        return emptyStateHTML(
+            "All Accounts Clear",
+            "There are currently no outstanding customer balances."
+        );
+    }
+
+
+    return `
+
+        <div class="balance-list">
+
+            ${items
+                .map(
+                    item => {
+
+                        const customer =
+                            item.customer;
+
+                        const balance =
+                            item.balance;
+
+                        const isReceivable =
+                            balance > 0;
+
+
+                        return `
+
+                            <div
+                                class="balance-list-item"
+                                data-customer-id="${customer.id}"
+                            >
+
+                                <div>
+
+                                    <div class="balance-customer-name">
+                                        ${escapeHTML(
+                                            customer.name
+                                        )}
+                                    </div>
+
+                                    <div class="balance-customer-meta">
+                                        ${
+                                            customer.phone
+                                                ? escapeHTML(
+                                                    customer.phone
+                                                )
+                                                : "No phone number"
+                                        }
+                                    </div>
+
+                                </div>
+
+
+                                <div
+                                    class="balance-value ${
+                                        isReceivable
+                                            ? "positive"
+                                            : "negative"
+                                    }"
+                                >
+
+                                    ${
+                                        isReceivable
+                                            ? "+"
+                                            : "-"
+                                    }
+
+                                    ${formatMoney(
+                                        Math.abs(
+                                            balance
+                                        )
+                                    )}
+
+                                </div>
+
+                            </div>
+
+                        `;
+                    }
+                )
+                .join("")
+            }
+
+        </div>
+
+    `;
+}
+
+
+/* =========================================================
+   DELETE TRANSACTION
+========================================================= */
+
+function deleteTransaction(
+    transactionId
+) {
+
+    const transaction =
+        getTransaction(
+            transactionId
+        );
+
+
+    if (!transaction) {
+
+        showToast(
+            "Transaction not found.",
+            "!"
+        );
+
+        return;
+    }
+
+
+    const customer =
+        getCustomer(
+            transaction.customerId
+        );
+
+
+    const customerName =
+        customer
+            ? customer.name
+            : "this customer";
+
+
+    const confirmed =
+        window.confirm(
+            `Delete this transaction for ${customerName}?`
+        );
+
+
+    if (!confirmed) {
+        return;
+    }
+
+
+    const linkedCheque =
+        appData.cheques.find(
+            cheque =>
+                cheque.transactionId ===
+                transactionId
+        );
+
+
+    appData.transactions =
+        appData.transactions.filter(
+            item =>
+                item.id !==
+                transactionId
+        );
+
+
+    if (linkedCheque) {
+
+        appData.cheques =
+            appData.cheques.filter(
+                cheque =>
+                    cheque.transactionId !==
+                    transactionId
+            );
+    }
+
+
+    const saved =
+        saveData();
+
+
+    if (!saved) {
+
+        /*
+         * Restore the deleted transaction
+         * if saving failed.
+         */
+
+        appData.transactions.push(
+            transaction
+        );
+
+
+        if (linkedCheque) {
+
+            appData.cheques.push(
+                linkedCheque
+            );
+        }
+
+
+        return;
+    }
+
+
+    showToast(
+        "Transaction deleted successfully.",
+        "✓"
+    );
+
+
+    if (
+        currentView === "customer" &&
+        selectedCustomerId
+    ) {
+
+        renderCustomerStatement(
+            selectedCustomerId
+        );
+
+        return;
+    }
+
+
+    if (
+        currentView === "transactions"
+    ) {
+
+        renderTransactions();
+
+        return;
+    }
+
+
+    renderView(
+        currentView
+    );
+}
+
+
+/* =========================================================
+   CUSTOMERS VIEW
+========================================================= */
+
+function renderCustomers() {
+
+    appContent.innerHTML = `
+
+        <div class="page-header">
+
+            <div>
+
+                <h1>Customers</h1>
+
+                <p>
+                    Manage customer accounts,
+                    balances and statements.
+                </p>
+
+            </div>
+
+
+            <div class="page-header-actions">
+
+                <button
+                    class="primary-button"
+                    data-action="add-customer"
+                >
+                    + Add Customer
+                </button>
+
+            </div>
+
+        </div>
+
+
+        <div class="card">
+
+            <div class="card-header">
+
+                <div>
+
+                    <div class="card-title">
+                        Customer Accounts
+                    </div>
+
+                    <div class="card-subtitle">
+                        ${
+                            appData.customers.length
+                        }
+                        customer(s)
+                    </div>
+
+                </div>
+
+
+                <div
+                    class="search-box"
+                    style="max-width:300px;"
+                >
+
+                    <span class="search-icon">
+                        ⌕
+                    </span>
+
+                    <input
+                        type="search"
+                        id="customerSearch"
+                        placeholder="Search customers..."
+                    >
+
+                </div>
+
+            </div>
+
+
+            <div
+                id="customerGrid"
+                class="customer-grid"
+            >
+
+                ${
+                    appData.customers.length
+                        ? customersHTML(
+                            appData.customers
+                        )
+                        : emptyStateHTML(
+                            "No Customers",
+                            "Add your first customer account."
+                        )
+                }
+
+            </div>
+
+        </div>
+
+    `;
+
+
     document
-        .getElementById("customerSearch")
+        .querySelector(
+            '[data-action="add-customer"]'
+        )
+        ?.addEventListener(
+            "click",
+            () => openCustomerModal()
+        );
+
+
+    document
+        .getElementById(
+            "customerSearch"
+        )
         ?.addEventListener(
             "input",
             filterCustomers
@@ -1107,7 +1693,9 @@ function renderCustomers() {
    CUSTOMER CARDS
 ========================================================= */
 
-function customersHTML(customers) {
+function customersHTML(
+    customers
+) {
 
     return customers
         .map(customer => {
@@ -1117,8 +1705,12 @@ function customersHTML(customers) {
                     customer.id
                 );
 
+
             const initials =
-                getInitials(customer.name);
+                getInitials(
+                    customer.name
+                );
+
 
             return `
 
@@ -1127,54 +1719,66 @@ function customersHTML(customers) {
                     <div class="customer-card-top">
 
                         <div class="customer-avatar">
-                            ${escapeHTML(initials)}
+                            ${escapeHTML(
+                                initials
+                            )}
                         </div>
 
                         ${
-    balance > 0
-        ? `
-            <span class="badge badge-danger">
-                RECEIVABLE
-            </span>
-        `
-        : balance < 0
-            ? `
-                <span class="badge badge-success">
-                    PAYABLE
-                </span>
-            `
-            : `
-                <span class="badge badge-neutral">
-                    SETTLED
-                </span>
-            `
-}
+                            balance > 0
+                                ? `
+                                    <span class="badge badge-danger">
+                                        RECEIVABLE
+                                    </span>
+                                `
+                                : balance < 0
+                                    ? `
+                                        <span class="badge badge-success">
+                                            PAYABLE
+                                        </span>
+                                    `
+                                    : `
+                                        <span class="badge badge-neutral">
+                                            SETTLED
+                                        </span>
+                                    `
+                        }
 
                     </div>
 
 
                     <div class="customer-name">
-                        ${escapeHTML(customer.name)}
+                        ${escapeHTML(
+                            customer.name
+                        )}
                     </div>
 
 
                     <div class="customer-detail">
+
                         ${
                             customer.phone
                                 ? "☎ " +
-                                  escapeHTML(customer.phone)
+                                  escapeHTML(
+                                      customer.phone
+                                  )
                                 : "No phone number"
                         }
+
                     </div>
 
 
                     <div class="customer-detail">
+
                         ${
                             customer.email
                                 ? "✉ " +
-                                  escapeHTML(customer.email)
+                                  escapeHTML(
+                                      customer.email
+                                  )
                                 : "No email"
                         }
+
                     </div>
 
 
@@ -1196,7 +1800,9 @@ function customersHTML(customers) {
                                 }"
                             >
                                 ${formatMoney(
-                                    Math.abs(balance)
+                                    Math.abs(
+                                        balance
+                                    )
                                 )}
                             </div>
 
@@ -1209,11 +1815,40 @@ function customersHTML(customers) {
 
                         <button
                             class="secondary-button"
+                            data-action="edit-customer"
+                            data-id="${customer.id}"
+                        >
+                            Edit
+                        </button>
+
+
+                        <button
+                            class="secondary-button"
                             data-action="statement"
                             data-id="${customer.id}"
                         >
                             Statement
                         </button>
+
+
+                        <button
+                            class="secondary-button danger-action"
+                            data-action="delete-customer"
+                            data-id="${customer.id}"
+                            style="border-color:#d64545;color:#d64545;"
+                        >
+                            Delete
+                        </button>
+
+
+                        <button
+                            class="secondary-button danger-action"
+                            data-action="delete-customer"
+                            data-id="${customer.id}"
+                        >
+                            Delete
+                        </button>
+
 
                         <button
                             class="primary-button"
@@ -1226,17 +1861,37 @@ function customersHTML(customers) {
                     </div>
 
                 </div>
+
             `;
         })
         .join("");
 }
-
-
-/* =========================================================
-   CUSTOMER CARD BUTTONS
-========================================================= */
-
 function setupCustomerCardButtons() {
+
+    document
+        .querySelectorAll(
+            '[data-action="edit-customer"]'
+        )
+        .forEach(button => {
+
+            button.addEventListener(
+                "click",
+                () => {
+
+                    const customer =
+                        getCustomer(
+                            button.dataset.id
+                        );
+
+                    if (customer) {
+                        openCustomerModal(
+                            customer
+                        );
+                    }
+                }
+            );
+        });
+
 
     document
         .querySelectorAll(
@@ -1248,6 +1903,22 @@ function setupCustomerCardButtons() {
                 "click",
                 () =>
                     openCustomerStatement(
+                        button.dataset.id
+                    )
+            );
+        });
+
+
+    document
+        .querySelectorAll(
+            '[data-action="delete-customer"]'
+        )
+        .forEach(button => {
+
+            button.addEventListener(
+                "click",
+                () =>
+                    deleteCustomer(
                         button.dataset.id
                     )
             );
@@ -1268,6 +1939,66 @@ function setupCustomerCardButtons() {
                     )
             );
         });
+}
+
+
+/* =========================================================
+   DELETE CUSTOMER
+========================================================= */
+
+function deleteCustomer(customerId) {
+
+    const customer =
+        getCustomer(customerId);
+
+    if (!customer) {
+        showToast(
+            "Customer could not be found.",
+            "!"
+        );
+        return;
+    }
+
+    const hasTransactions =
+        appData.transactions.some(
+            transaction =>
+                transaction.customerId ===
+                customerId
+        );
+
+    const hasCheques =
+        appData.cheques.some(
+            cheque =>
+                cheque.customerId ===
+                customerId
+        );
+
+    if (hasTransactions || hasCheques) {
+        showToast(
+            "This customer cannot be deleted because account activity exists. Delete the transactions first.",
+            "!"
+        );
+        return;
+    }
+
+    if (!window.confirm(
+        `Delete customer "${customer.name}"? This action cannot be undone.`
+    )) {
+        return;
+    }
+
+    appData.customers =
+        appData.customers.filter(
+            item => item.id !== customerId
+        );
+
+    saveData();
+
+    showToast(
+        "Customer deleted successfully."
+    );
+
+    renderView("customers");
 }
 
 
@@ -1319,159 +2050,239 @@ function filterCustomers(event) {
 
 
 /* =========================================================
-   ADD CUSTOMER MODAL
+   ADD / EDIT CUSTOMER MODAL
 ========================================================= */
 
-function openCustomerModal() {
+function openCustomerModal(
+    customerToEdit = null
+) {
+
+    editingCustomerId =
+        customerToEdit?.id || null;
 
     openModal(
-        "Add Customer",
-        "Create a new customer account",
+        editingCustomerId
+            ? "Edit Customer"
+            : "Add Customer",
+
+        editingCustomerId
+            ? "Update customer account details"
+            : "Create a new customer account",
+
         `
+            <form
+                id="customerForm"
+                class="modal-form"
+            >
 
-        <form id="customerForm">
+                <div class="form-grid">
 
-            <div class="form-grid">
+                    <div class="form-group">
 
-                <div class="form-group full">
+                        <label>
+                            Customer Name
+                            <span class="required">*</span>
+                        </label>
 
-                    <label class="form-label">
-                        Customer Name
-                        <span class="required">*</span>
-                    </label>
+                        <input
+                            type="text"
+                            id="customerName"
+                            class="form-input"
+                            required
+                            value="${
+                                customerToEdit
+                                    ? escapeHTML(
+                                        customerToEdit.name || ""
+                                    )
+                                    : ""
+                            }"
+                            placeholder="Enter customer name"
+                        >
 
-                    <input
-                        class="form-control"
-                        id="customerName"
-                        required
-                        placeholder="Enter customer / company name"
-                    >
-
-                </div>
-
-
-                <div class="form-group">
-
-                    <label class="form-label">
-                        Phone
-                    </label>
-
-                    <input
-                        class="form-control"
-                        id="customerPhone"
-                        type="tel"
-                        placeholder="Phone number"
-                    >
-
-                </div>
+                    </div>
 
 
-                <div class="form-group">
+                    <div class="form-group">
 
-                    <label class="form-label">
-                        Email
-                    </label>
+                        <label>
+                            Company
+                        </label>
 
-                    <input
-                        class="form-control"
-                        id="customerEmail"
-                        type="email"
-                        placeholder="Email address"
-                    >
+                        <input
+                            type="text"
+                            id="customerCompany"
+                            class="form-input"
+                            value="${
+                                customerToEdit
+                                    ? escapeHTML(
+                                        customerToEdit.company || ""
+                                    )
+                                    : ""
+                            }"
+                            placeholder="Company name"
+                        >
 
-                </div>
+                    </div>
 
 
-                <div class="form-group full">
+                    <div class="form-group">
 
-                    <label class="form-label">
-                        Opening Balance
-                    </label>
+                        <label>
+                            Phone
+                        </label>
 
-                    <input
-                        class="form-control"
-                        id="customerOpeningBalance"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value="0"
-                    >
+                        <input
+                            type="tel"
+                            id="customerPhone"
+                            class="form-input"
+                            value="${
+                                customerToEdit
+                                    ? escapeHTML(
+                                        customerToEdit.phone || ""
+                                    )
+                                    : ""
+                            }"
+                            placeholder="Phone number"
+                        >
 
-                    <div class="form-help">
-                        Enter the amount outstanding at the beginning
-                        of your records.
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label>
+                            Email
+                        </label>
+
+                        <input
+                            type="email"
+                            id="customerEmail"
+                            class="form-input"
+                            value="${
+                                customerToEdit
+                                    ? escapeHTML(
+                                        customerToEdit.email || ""
+                                    )
+                                    : ""
+                            }"
+                            placeholder="Email address"
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label>
+                            Opening Balance
+                        </label>
+
+                        <input
+                            type="number"
+                            id="customerOpeningBalance"
+                            class="form-input"
+                            step="0.01"
+                            value="${
+                                customerToEdit
+                                    ? Number(
+                                        customerToEdit.openingBalance || 0
+                                    )
+                                    : 0
+                            }"
+                            placeholder="0.00"
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label>
+                            Opening Balance Type
+                        </label>
+
+                        <select
+                            id="customerOpeningBalanceType"
+                            class="form-input"
+                        >
+
+                            <option
+                                value="receivable"
+                                ${
+                                    !customerToEdit ||
+                                    Number(
+                                        customerToEdit.openingBalance || 0
+                                    ) >= 0
+                                        ? "selected"
+                                        : ""
+                                }
+                            >
+                                Receivable
+                            </option>
+
+                            <option
+                                value="payable"
+                                ${
+                                    customerToEdit &&
+                                    Number(
+                                        customerToEdit.openingBalance || 0
+                                    ) < 0
+                                        ? "selected"
+                                        : ""
+                                }
+                            >
+                                Payable
+                            </option>
+
+                        </select>
+
                     </div>
 
                 </div>
 
 
-                <div class="form-group full">
+                <div class="modal-actions">
 
-                    <label class="form-label">
-                        Address
-                    </label>
-
-                    <textarea
-                        class="form-control"
-                        id="customerAddress"
-                        placeholder="Customer address"
-                    ></textarea>
-
-                </div>
+                    <button
+                        type="button"
+                        class="secondary-button"
+                        data-modal-cancel
+                    >
+                        Cancel
+                    </button>
 
 
-                <div class="form-group full">
-
-                    <label class="form-label">
-                        Notes
-                    </label>
-
-                    <textarea
-                        class="form-control"
-                        id="customerNotes"
-                        placeholder="Optional notes"
-                    ></textarea>
+                    <button
+                        type="submit"
+                        class="primary-button"
+                    >
+                        ${
+                            editingCustomerId
+                                ? "Update Customer"
+                                : "Save Customer"
+                        }
+                    </button>
 
                 </div>
 
-            </div>
-
-
-            <div class="modal-footer">
-
-                <button
-                    type="button"
-                    class="secondary-button"
-                    id="cancelCustomer"
-                >
-                    Cancel
-                </button>
-
-                <button
-                    type="submit"
-                    class="primary-button"
-                >
-                    Save Customer
-                </button>
-
-            </div>
-
-        </form>
+            </form>
         `
     );
 
 
     document
         .getElementById("customerForm")
-        .addEventListener(
+        ?.addEventListener(
             "submit",
             saveCustomer
         );
 
 
     document
-        .getElementById("cancelCustomer")
-        .addEventListener(
+        .querySelector(
+            "[data-modal-cancel]"
+        )
+        ?.addEventListener(
             "click",
             closeModal
         );
@@ -1482,6 +2293,1687 @@ function openCustomerModal() {
    SAVE CUSTOMER
 ========================================================= */
 
+function saveCustomer(event) {
+
+    event.preventDefault();
+
+
+    const nameInput =
+        document.getElementById(
+            "customerName"
+        );
+
+    const companyInput =
+        document.getElementById(
+            "customerCompany"
+        );
+
+    const phoneInput =
+        document.getElementById(
+            "customerPhone"
+        );
+
+    const emailInput =
+        document.getElementById(
+            "customerEmail"
+        );
+
+    const openingBalanceInput =
+        document.getElementById(
+            "customerOpeningBalance"
+        );
+
+    const openingBalanceTypeInput =
+        document.getElementById(
+            "customerOpeningBalanceType"
+        );
+
+
+    if (!nameInput) {
+        showToast(
+            "Customer form could not be loaded.",
+            "!"
+        );
+        return;
+    }
+
+
+    const name =
+        nameInput.value.trim();
+
+
+    const company =
+        companyInput?.value.trim() || "";
+
+
+    const phone =
+        phoneInput?.value.trim() || "";
+
+
+    const email =
+        emailInput?.value.trim() || "";
+
+
+    const openingBalance =
+        Number(
+            openingBalanceInput?.value || 0
+        );
+
+
+    const openingBalanceType =
+        openingBalanceTypeInput?.value ||
+        "receivable";
+
+
+    if (!name) {
+
+        showToast(
+            "Please enter the customer name.",
+            "!"
+        );
+
+        nameInput.focus();
+
+        return;
+    }
+
+
+    if (
+        !Number.isFinite(
+            openingBalance
+        )
+    ) {
+
+        showToast(
+            "Please enter a valid opening balance.",
+            "!"
+        );
+
+        return;
+    }
+
+
+    const finalOpeningBalance =
+        openingBalanceType ===
+        "payable"
+            ? -Math.abs(
+                openingBalance
+            )
+            : Math.abs(
+                openingBalance
+            );
+
+
+    if (editingCustomerId) {
+
+        const customer =
+            getCustomer(
+                editingCustomerId
+            );
+
+
+        if (!customer) {
+
+            showToast(
+                "Customer could not be found.",
+                "!"
+            );
+
+            return;
+        }
+
+
+        customer.name =
+            name;
+
+        customer.company =
+            company;
+
+        customer.phone =
+            phone;
+
+        customer.email =
+            email;
+
+        customer.openingBalance =
+            finalOpeningBalance;
+
+
+        saveData();
+
+
+        closeModal();
+
+
+        showToast(
+            "Customer updated successfully.",
+            "✓"
+        );
+
+
+        renderView(
+            currentView
+        );
+
+
+        return;
+    }
+
+
+    const customer = {
+
+        id:
+            makeId(
+                "customer"
+            ),
+
+        name:
+            name,
+
+        company:
+            company,
+
+        phone:
+            phone,
+
+        email:
+            email,
+
+        openingBalance:
+            finalOpeningBalance,
+
+        createdAt:
+            new Date()
+                .toISOString()
+
+    };
+
+
+    appData.customers.push(
+        customer
+    );
+
+
+    saveData();
+
+
+    closeModal();
+
+
+    showToast(
+        "Customer saved successfully.",
+        "✓"
+    );
+
+
+    renderView(
+        currentView
+    );
+}
+
+
+/* =========================================================
+   OPEN CUSTOMER STATEMENT
+========================================================= */
+
+function openCustomerStatement(
+    customerId
+) {
+
+    const customer =
+        getCustomer(
+            customerId
+        );
+
+
+    if (!customer) {
+
+        showToast(
+            "Customer could not be found.",
+            "!"
+        );
+
+        return;
+    }
+
+
+    selectedCustomerId =
+        customerId;
+
+
+    renderView(
+        "customer"
+    );
+}
+
+
+/* =========================================================
+   CUSTOMER STATEMENT VIEW
+========================================================= */
+
+function renderCustomerStatement(
+    customerId
+) {
+
+    const customer =
+        getCustomer(
+            customerId
+        );
+
+
+    if (!customer) {
+
+        selectedCustomerId =
+            null;
+
+        renderView(
+            "customers"
+        );
+
+        return;
+    }
+
+
+    const transactions =
+        getCustomerTransactions(
+            customerId
+        );
+
+
+    appContent.innerHTML = `
+
+        <div class="page-header">
+
+            <div>
+
+                <button
+                    class="secondary-button"
+                    id="backToCustomersButton"
+                >
+                    ← Back
+                </button>
+
+            </div>
+
+
+            <div class="page-header-actions">
+
+                <button
+                    class="secondary-button"
+                    id="customerStatementEditButton"
+                >
+                    Edit Customer
+                </button>
+
+
+                <button
+                    class="primary-button"
+                    id="customerStatementAddButton"
+                >
+                    + Add Transaction
+                </button>
+
+
+                <button
+                    class="secondary-button"
+                    id="customerStatementPrintButton"
+                >
+                    Print
+                </button>
+
+            </div>
+
+        </div>
+
+
+        <div class="card">
+
+            <div class="statement-header">
+
+                <div>
+
+                    <div class="statement-company">
+                        Al Jefoon Tents
+                    </div>
+
+                    <div class="statement-title">
+                        Customer Statement
+                    </div>
+
+                </div>
+
+
+                <div class="statement-customer">
+
+                    <div class="statement-customer-name">
+                        ${escapeHTML(
+                            customer.name
+                        )}
+                    </div>
+
+                    ${
+                        customer.company
+                            ? `
+                                <div class="statement-customer-info">
+                                    ${escapeHTML(
+                                        customer.company
+                                    )}
+                                </div>
+                            `
+                            : ""
+                    }
+
+
+                    ${
+                        customer.phone
+                            ? `
+                                <div class="statement-customer-info">
+                                    ${escapeHTML(
+                                        customer.phone
+                                    )}
+                                </div>
+                            `
+                            : ""
+                    }
+
+
+                    ${
+                        customer.email
+                            ? `
+                                <div class="statement-customer-info">
+                                    ${escapeHTML(
+                                        customer.email
+                                    )}
+                                </div>
+                            `
+                            : ""
+                    }
+
+                </div>
+
+            </div>
+
+
+            <div class="statement-summary">
+
+                <div class="summary-item">
+
+                    <span>
+                        Opening Balance
+                    </span>
+
+                    <strong>
+                        ${formatMoney(
+                            Math.abs(
+                                Number(
+                                    customer.openingBalance || 0
+                                )
+                            )
+                        )}
+                    </strong>
+
+                </div>
+
+
+                <div class="summary-item">
+
+                    <span>
+                        Transactions
+                    </span>
+
+                    <strong>
+                        ${transactions.length}
+                    </strong>
+
+                </div>
+
+
+                <div class="summary-item">
+
+                    <span>
+                        Current Balance
+                    </span>
+
+                    <strong
+                        class="${
+                            getCustomerBalance(
+                                customer.id
+                            ) > 0
+                                ? "positive"
+                                : getCustomerBalance(
+                                    customer.id
+                                ) < 0
+                                    ? "negative"
+                                    : ""
+                        }"
+                    >
+                        ${formatMoney(
+                            Math.abs(
+                                getCustomerBalance(
+                                    customer.id
+                                )
+                            )
+                        )}
+                    </strong>
+
+                </div>
+
+            </div>
+
+
+            <div class="table-wrap">
+
+                ${
+                    statementTableHTML(
+                        customer,
+                        transactions
+                    )
+                }
+
+            </div>
+
+        </div>
+
+    `;
+
+
+    document
+        .getElementById(
+            "backToCustomersButton"
+        )
+        ?.addEventListener(
+            "click",
+            () => {
+
+                selectedCustomerId =
+                    null;
+
+                renderView(
+                    "customers"
+                );
+            }
+        );
+
+
+    document
+        .getElementById(
+            "customerStatementEditButton"
+        )
+        ?.addEventListener(
+            "click",
+            () =>
+                openCustomerModal(
+                    customer
+                )
+        );
+
+
+    document
+        .getElementById(
+            "customerStatementAddButton"
+        )
+        ?.addEventListener(
+            "click",
+            () =>
+                openTransactionModal(
+                    customerId
+                )
+        );
+
+
+    document
+        .getElementById(
+            "customerStatementPrintButton"
+        )
+        ?.addEventListener(
+            "click",
+            () =>
+                printCustomerStatement(
+                    customerId
+                )
+        );
+
+
+    attachTransactionActionListeners();
+}
+/* =========================================================
+   TRANSACTION TYPE BUTTON
+========================================================= */
+
+function transactionTypeButton(
+    type,
+    icon,
+    title,
+    description
+) {
+
+    return `
+
+        <button
+            type="button"
+            class="transaction-type-button ${
+                type === "sale"
+                    ? "active"
+                    : ""
+            }"
+            data-transaction-type="${type}"
+        >
+
+            <span class="transaction-type-icon">
+                ${icon}
+            </span>
+
+            <span class="transaction-type-content">
+
+                <span class="transaction-type-title">
+                    ${title}
+                </span>
+
+                <span class="transaction-type-description">
+                    ${description}
+                </span>
+
+            </span>
+
+        </button>
+
+    `;
+}
+
+
+/* =========================================================
+   TRANSACTION FORM SETUP
+========================================================= */
+
+function setupTransactionForm() {
+
+    const form =
+        document.getElementById(
+            "transactionForm"
+        );
+
+    if (!form) return;
+
+
+    const typeButtons =
+        document.querySelectorAll(
+            ".transaction-type-button"
+        );
+
+    const typeInput =
+        document.getElementById(
+            "transactionType"
+        );
+
+
+    typeButtons.forEach(button => {
+
+        button.addEventListener(
+            "click",
+            () => {
+
+                typeButtons.forEach(
+                    item => {
+                        item.classList.remove(
+                            "active"
+                        );
+                    }
+                );
+
+                button.classList.add(
+                    "active"
+                );
+
+                typeInput.value =
+                    button.dataset.transactionType;
+
+                updatePaymentVisibility();
+            }
+        );
+
+    });
+
+
+    const paymentMethod =
+        document.getElementById(
+            "paymentMethod"
+        );
+
+    if (paymentMethod) {
+
+        paymentMethod.addEventListener(
+            "change",
+            updateChequeVisibility
+        );
+
+    }
+
+
+    document
+        .getElementById("cancelTransaction")
+        ?.addEventListener(
+            "click",
+            closeModal
+        );
+
+
+    updatePaymentVisibility();
+
+
+    form.addEventListener(
+        "submit",
+        saveTransaction
+    );
+
+}
+
+
+/* =========================================================
+   PAYMENT VISIBILITY
+========================================================= */
+
+function updatePaymentVisibility() {
+
+    const type =
+        document.getElementById(
+            "transactionType"
+        )?.value;
+
+
+    const paymentDetails =
+        document.getElementById(
+            "paymentDetails"
+        );
+
+
+    if (!paymentDetails) return;
+
+
+    const showPayment =
+        type === "payment_received" ||
+        type === "payment_made";
+
+
+    paymentDetails.classList.toggle(
+        "hidden",
+        !showPayment
+    );
+
+
+    if (showPayment) {
+
+        updateChequeVisibility();
+
+    }
+
+}
+
+
+/* =========================================================
+   CHEQUE VISIBILITY
+========================================================= */
+
+function updateChequeVisibility() {
+
+    const paymentMethod =
+        document.getElementById(
+            "paymentMethod"
+        )?.value;
+
+
+    const chequeDetails =
+        document.getElementById(
+            "chequeDetails"
+        );
+
+
+    if (!chequeDetails) return;
+
+
+    chequeDetails.classList.toggle(
+        "hidden",
+        paymentMethod !== "Cheque"
+    );
+
+}
+
+
+/* =========================================================
+   SAVE TRANSACTION
+========================================================= */
+
+function saveTransaction(event) {
+
+    event.preventDefault();
+
+
+    const customerElement =
+        document.getElementById(
+            "transactionCustomer"
+        );
+
+    const amountElement =
+        document.getElementById(
+            "transactionAmount"
+        );
+
+    const dateElement =
+        document.getElementById(
+            "transactionDate"
+        );
+
+    const descriptionElement =
+        document.getElementById(
+            "transactionDescription"
+        );
+
+    const typeElement =
+        document.getElementById(
+            "transactionType"
+        );
+
+
+    if (
+        !customerElement ||
+        !amountElement ||
+        !dateElement ||
+        !descriptionElement ||
+        !typeElement
+    ) {
+
+        showToast(
+            "Transaction form could not be loaded.",
+            "!"
+        );
+
+        return;
+    }
+
+
+    const customerId =
+        customerElement.value;
+
+
+    const amount =
+        Number(
+            amountElement.value
+        );
+
+
+    const date =
+        dateElement.value;
+
+
+    const description =
+        descriptionElement.value.trim();
+
+
+    const type =
+        typeElement.value;
+
+
+    if (!customerId) {
+
+        showToast(
+            "Please select a customer.",
+            "!"
+        );
+
+        return;
+    }
+
+
+    if (
+        !Number.isFinite(amount) ||
+        amount <= 0
+    ) {
+
+        showToast(
+            "Please enter a valid amount.",
+            "!"
+        );
+
+        return;
+    }
+
+
+    if (!date) {
+
+        showToast(
+            "Please select a transaction date.",
+            "!"
+        );
+
+        return;
+    }
+
+
+    if (!description) {
+
+        showToast(
+            "Please enter a description.",
+            "!"
+        );
+
+        return;
+    }
+
+
+    const paymentMethod =
+        document.getElementById(
+            "paymentMethod"
+        )?.value || "";
+
+
+    const chequeNumber =
+        document.getElementById(
+            "chequeNumber"
+        )?.value.trim() || "";
+
+
+    if (
+        paymentMethod === "Cheque" &&
+        (type === "payment_received" ||
+         type === "payment_made") &&
+        !chequeNumber
+    ) {
+
+        showToast(
+            "Please enter the cheque number.",
+            "!"
+        );
+
+        return;
+    }
+
+
+    const notes =
+        document.getElementById(
+            "transactionNotes"
+        )?.value.trim() || "";
+
+
+    const existingTransaction =
+        editingTransactionId
+            ? appData.transactions.find(
+                transaction =>
+                    transaction.id ===
+                    editingTransactionId
+            )
+            : null;
+
+
+    const transactionData = {
+
+        id:
+            existingTransaction?.id ||
+            makeId("transaction"),
+
+        customerId,
+
+        type,
+
+        date,
+
+        amount,
+
+        description,
+
+        paymentMethod:
+            type === "payment_received" ||
+            type === "payment_made"
+                ? paymentMethod
+                : "",
+
+        notes,
+
+        createdAt:
+            existingTransaction?.createdAt ||
+            new Date().toISOString(),
+
+        updatedAt:
+            new Date().toISOString()
+
+    };
+
+
+    if (existingTransaction) {
+
+        Object.assign(
+            existingTransaction,
+            transactionData
+        );
+
+    } else {
+
+        appData.transactions.push(
+            transactionData
+        );
+
+    }
+
+
+    const existingCheque =
+        appData.cheques.find(
+            cheque =>
+                cheque.transactionId ===
+                transactionData.id
+        );
+
+
+    const isCheque =
+        paymentMethod === "Cheque" &&
+        (
+            type === "payment_received" ||
+            type === "payment_made"
+        );
+
+
+    if (isCheque) {
+
+        const chequeData = {
+
+            id:
+                existingCheque?.id ||
+                makeId("cheque"),
+
+            transactionId:
+                transactionData.id,
+
+            customerId,
+
+            chequeNumber,
+
+            bank:
+                document
+                    .getElementById("chequeBank")
+                    ?.value.trim() || "",
+
+            chequeDate:
+                document
+                    .getElementById("chequeDate")
+                    ?.value ||
+                date,
+
+            clearanceDate:
+                document
+                    .getElementById(
+                        "chequeClearanceDate"
+                    )
+                    ?.value || "",
+
+            drawer:
+                document
+                    .getElementById("chequeDrawer")
+                    ?.value.trim() || "",
+
+            status:
+                document
+                    .getElementById("chequeStatus")
+                    ?.value ||
+                "Issued"
+
+        };
+
+
+        if (existingCheque) {
+
+            Object.assign(
+                existingCheque,
+                chequeData
+            );
+
+        } else {
+
+            appData.cheques.push(
+                chequeData
+            );
+
+        }
+
+    } else if (existingCheque) {
+
+        appData.cheques =
+            appData.cheques.filter(
+                cheque =>
+                    cheque.transactionId !==
+                    transactionData.id
+            );
+
+    }
+
+
+    try {
+
+        saveData();
+
+    } catch (error) {
+
+        console.error(
+            "Failed to save transaction:",
+            error
+        );
+
+        showToast(
+            "Transaction could not be saved.",
+            "!"
+        );
+
+        return;
+    }
+
+
+    closeModal();
+
+
+    const wasEditing =
+        Boolean(editingTransactionId);
+
+
+    editingTransactionId =
+        null;
+
+
+    showToast(
+        wasEditing
+            ? "Transaction updated successfully."
+            : "Transaction saved successfully."
+    );
+
+
+    if (selectedCustomerId) {
+
+        renderCustomerStatement(
+            selectedCustomerId
+        );
+
+    } else {
+
+        renderView(
+            currentView || "dashboard"
+        );
+
+    }
+
+}
+/* =========================================================
+   STATEMENT TABLE
+========================================================= */
+
+function statementTableHTML(
+    customer,
+    transactions
+) {
+
+    let runningBalance =
+        Number(
+            customer.openingBalance || 0
+        );
+
+
+    let rows = `
+
+        <table class="data-table">
+
+            <thead>
+
+                <tr>
+
+                    <th>Date</th>
+                    <th>Description</th>
+                    <th>Method</th>
+                    <th>Debit</th>
+                    <th>Credit</th>
+                    <th>Balance</th>
+                    <th>Actions</th>
+
+                </tr>
+
+            </thead>
+
+            <tbody>
+    `;
+
+
+    rows += `
+
+        <tr>
+
+            <td>
+                ${formatDate(customer.createdAt)}
+            </td>
+
+            <td>
+                <strong>Opening Balance</strong>
+            </td>
+
+            <td>
+                <span class="badge badge-neutral">
+                    Opening
+                </span>
+            </td>
+
+            <td>
+                ${
+                    runningBalance > 0
+                        ? formatMoney(
+                            runningBalance
+                        )
+                        : "—"
+                }
+            </td>
+
+            <td>
+                ${
+                    runningBalance < 0
+                        ? formatMoney(
+                            Math.abs(
+                                runningBalance
+                            )
+                        )
+                        : "—"
+                }
+            </td>
+
+            <td>
+                <strong>
+                    ${formatMoney(
+                        Math.abs(
+                            runningBalance
+                        )
+                    )}
+                </strong>
+            </td>
+
+            <td>
+                —
+            </td>
+
+        </tr>
+    `;
+
+
+    const sorted =
+        [...transactions]
+            .sort(
+                (a, b) =>
+                    new Date(a.date) -
+                    new Date(b.date)
+            );
+
+
+    sorted.forEach(
+        transaction => {
+
+            const amount =
+                Number(
+                    transaction.amount || 0
+                );
+
+
+            const isReceivable =
+                transaction.type === "sale";
+
+
+            const isPaymentReceived =
+                transaction.type ===
+                "payment_received";
+
+
+            const isPayable =
+                transaction.type === "purchase";
+
+
+            const isPaymentMade =
+                transaction.type === "payment_made";
+
+
+            const isDebit =
+                transaction.type === "debit";
+
+
+            const isCredit =
+                transaction.type === "credit";
+
+
+            /* -------------------------------------------------
+               RUNNING BALANCE
+            ------------------------------------------------- */
+
+            if (isReceivable) {
+
+                runningBalance += amount;
+
+            } else if (isPaymentReceived) {
+
+                runningBalance -= amount;
+
+            } else if (isPayable) {
+
+                runningBalance -= amount;
+
+            } else if (isPaymentMade) {
+
+                runningBalance += amount;
+
+            } else if (isDebit) {
+
+                runningBalance += amount;
+
+            } else if (isCredit) {
+
+                runningBalance -= amount;
+            }
+
+
+            const debit =
+                isReceivable ||
+                isPaymentMade ||
+                isDebit;
+
+
+            const credit =
+                isPaymentReceived ||
+                isPayable ||
+                isCredit;
+
+
+            let entryLabel = "Adjustment";
+
+
+            if (isReceivable) {
+
+                entryLabel = "Receivable";
+
+            } else if (isPaymentReceived) {
+
+                entryLabel = "Payment Received";
+
+            } else if (isPayable) {
+
+                entryLabel = "Payable";
+
+            } else if (isPaymentMade) {
+
+                entryLabel = "Payment Made";
+
+            } else if (isDebit) {
+
+                entryLabel = "Debit";
+
+            } else if (isCredit) {
+
+                entryLabel = "Credit";
+            }
+
+
+            rows += `
+
+                <tr>
+
+                    <td>
+                        ${formatDate(
+                            transaction.date
+                        )}
+                    </td>
+
+                    <td>
+
+                        <strong>
+                            ${escapeHTML(
+                                transaction.description
+                            )}
+                        </strong>
+
+                        ${
+                            transaction.notes
+                                ? `
+                                    <div
+                                        style="
+                                            margin-top:4px;
+                                            color:var(--muted);
+                                            font-size:10px;
+                                        "
+                                    >
+                                        ${escapeHTML(
+                                            transaction.notes
+                                        )}
+                                    </div>
+                                `
+                                : ""
+                        }
+
+                    </td>
+
+                    <td>
+
+                        ${
+                            transaction.paymentMethod
+                                ? `
+                                    <span class="badge badge-neutral">
+                                        ${escapeHTML(
+                                            transaction.paymentMethod
+                                        )}
+                                    </span>
+                                `
+                                : `
+                                    <span class="badge badge-gold">
+                                        ${entryLabel}
+                                    </span>
+                                `
+                        }
+
+                    </td>
+
+                    <td>
+
+                        ${
+                            debit
+                                ? `
+                                    <span class="amount positive">
+                                        ${formatMoney(amount)}
+                                    </span>
+                                `
+                                : "—"
+                        }
+
+                    </td>
+
+                    <td>
+
+                        ${
+                            credit
+                                ? `
+                                    <span class="amount negative">
+                                        ${formatMoney(amount)}
+                                    </span>
+                                `
+                                : "—"
+                        }
+
+                    </td>
+
+                    <td>
+
+                        <strong>
+                            ${formatMoney(
+                                Math.abs(
+                                    runningBalance
+                                )
+                            )}
+                        </strong>
+
+                    </td>
+
+                    <td>
+                        <div class="table-actions">
+                            <button
+                                type="button"
+                                class="secondary-button edit-transaction-button"
+                                data-transaction-id="${transaction.id}"
+                                style="padding:6px 10px;font-size:11px;white-space:nowrap;"
+                            >
+                                Edit
+                            </button>
+                            <button
+                                type="button"
+                                class="secondary-button danger-action delete-transaction-button"
+                                data-transaction-id="${transaction.id}"
+                                style="padding:6px 10px;font-size:11px;white-space:nowrap;"
+                            >
+                                Delete
+                            </button>
+                        </div>
+                    </td>
+
+                </tr>
+            `;
+        }
+    );
+
+
+    rows += `
+
+            </tbody>
+
+        </table>
+    `;
+
+    return rows;
+}
+
+/* =========================================================
+   TRANSACTIONS
+========================================================= */
+
+function renderTransactions() {
+
+    const transactions =
+        getFilteredTransactions();
+
+
+    appContent.innerHTML = `
+
+        <div class="page-header">
+
+            <div>
+
+                <h1>Transactions</h1>
+
+                <p>
+                    View and manage all customer account entries.
+                </p>
+
+            </div>
+
+            <div class="page-header-actions">
+
+                <button
+                    class="primary-button"
+                    id="addTransactionButton"
+                >
+                    + Add Transaction
+                </button>
+
+            </div>
+
+        </div>
+
+
+        <div class="card filter-bar">
+
+            <div class="search-box">
+
+                <span class="search-icon">
+                    ⌕
+                </span>
+
+                <input
+                    id="transactionSearch"
+                    type="search"
+                    placeholder="Search transactions..."
+                >
+
+            </div>
+
+
+            <div class="filter-group">
+
+                <select
+                    id="transactionCustomerFilter"
+                    class="filter-select"
+                >
+
+                    <option value="">
+                        All Customers
+                    </option>
+
+                    ${
+                        appData.customers
+                            .map(
+                                customer => `
+                                    <option
+                                        value="${customer.id}"
+                                    >
+                                        ${escapeHTML(
+                                            customer.name
+                                        )}
+                                    </option>
+                                `
+                            )
+                            .join("")
+                    }
+
+                </select>
+
+
+                <select
+                    id="transactionTypeFilter"
+                    class="filter-select"
+                >
+
+                    <option value="">
+                        All Types
+                    </option>
+
+                    <option value="sale">
+                        Sale
+                    </option>
+
+                    <option value="payment_received">
+                        Payment Received
+                    </option>
+
+                    <option value="purchase">
+                        Purchase
+                    </option>
+
+                    <option value="payment_made">
+                        Payment Made
+                    </option>
+
+                    <option value="debit">
+                        Debit
+                    </option>
+
+                    <option value="credit">
+                        Credit
+                    </option>
+
+                </select>
+
+            </div>
+
+        </div>
+
+
+        <div class="card">
+
+            <div
+                id="transactionsTableContainer"
+                class="table-wrap"
+            >
+
+                ${
+                    transactions.length
+                        ? transactionsTableHTML(
+                            transactions
+                        )
+                        : emptyStateHTML(
+                            "No Transactions",
+                            "No transactions match your current filters."
+                        )
+                }
+
+            </div>
+
+        </div>
+    `;
+
+
+    document
+        .getElementById(
+            "addTransactionButton"
+        )
+        ?.addEventListener(
+            "click",
+            () => openTransactionModal()
+        );
+
+
+    const searchInput =
+        document.getElementById(
+            "transactionSearch"
+        );
+
+
+    const customerFilter =
+        document.getElementById(
+            "transactionCustomerFilter"
+        );
+
+
+    const typeFilter =
+        document.getElementById(
+            "transactionTypeFilter"
+        );
+
+
+    const refresh =
+        () => {
+
+            const filtered =
+                getFilteredTransactions(
+                    searchInput?.value || "",
+                    customerFilter?.value || "",
+                    typeFilter?.value || ""
+                );
+
+
+            const container =
+                document.getElementById(
+                    "transactionsTableContainer"
+                );
+
+
+            if (!container) return;
+
+
+            container.innerHTML =
+                filtered.length
+                    ? transactionsTableHTML(
+                        filtered
+                    )
+                    : emptyStateHTML(
+                        "No Transactions",
+                        "No transactions match your current filters."
+                    );
+
+
+            attachTransactionActionListeners();
+        };
+
+
+    searchInput?.addEventListener(
+        "input",
+        refresh
+    );
+
+
+    customerFilter?.addEventListener(
+        "change",
+        refresh
+    );
+
+
+    typeFilter?.addEventListener(
+        "change",
+        refresh
+    );
+
+
+    attachTransactionActionListeners();
+}
 function saveCustomer(event) {
 
     event.preventDefault();
@@ -1502,14 +3994,8 @@ function saveCustomer(event) {
         return;
     }
 
-
-    const customer = {
-
-        id:
-            makeId("customer"),
-
+    const customerData = {
         name,
-
         phone:
             document
                 .getElementById("customerPhone")
@@ -1537,16 +4023,54 @@ function saveCustomer(event) {
         openingBalance:
             Number(
                 document
-                    .getElementById(
-                        "customerOpeningBalance"
-                    )
+                    .getElementById("customerOpeningBalance")
                     .value || 0
-            ),
+            )
+    };
+
+    if (editingCustomerId) {
+
+        const customer =
+            getCustomer(editingCustomerId);
+
+        if (!customer) {
+            showToast(
+                "Customer could not be found.",
+                "!"
+            );
+            return;
+        }
+
+        Object.assign(
+            customer,
+            customerData
+        );
+
+        saveData();
+
+        closeModal();
+
+        showToast(
+            "Customer updated successfully."
+        );
+
+        editingCustomerId = null;
+
+        renderView("customers");
+
+        return;
+    }
+
+    const customer = {
+
+        id:
+            makeId("customer"),
+
+        ...customerData,
 
         createdAt:
             new Date().toISOString()
     };
-
 
     appData.customers.push(customer);
 
@@ -1567,23 +4091,31 @@ function saveCustomer(event) {
 ========================================================= */
 
 function openTransactionModal(
-    preselectedCustomerId = null
+    preselectedCustomerId = null,
+    transactionToEdit = null
 ) {
 
+    editingTransactionId =
+        transactionToEdit?.id || null;
+
     const defaultCustomer =
+        transactionToEdit?.customerId ||
         preselectedCustomerId ||
         selectedCustomerId ||
         "";
 
-
     openModal(
-        "Add Transaction",
-        "Record a customer account entry",
+        editingTransactionId
+            ? "Edit Transaction"
+            : "Add Transaction",
+        editingTransactionId
+            ? "Update this customer account entry"
+            : "Record a customer account entry",
         transactionFormHTML(
-            defaultCustomer
+            defaultCustomer,
+            transactionToEdit
         )
     );
-
 
     setupTransactionForm();
 }
@@ -1594,20 +4126,9 @@ function openTransactionModal(
 ========================================================= */
 
 function transactionFormHTML(
-    customerId
+    customerId,
+    transaction = null
 ) {
-
-    const customerOptions =
-        appData.customers
-            .map(customer => `
-                <option
-                    value="${escapeHTML(customer.id)}"
-                    ${customer.id === customerId ? "selected" : ""}
-                >
-                    ${escapeHTML(customer.name)}
-                </option>
-            `)
-            .join("");
 
     return `
 
@@ -1627,10 +4148,20 @@ function transactionFormHTML(
                 >
 
                     <option value="">
-                        Select Customer
+                        Select customer
                     </option>
 
-                    ${customerOptions}
+                    ${appData.customers
+                        .map(customer => `
+                            <option
+                                value="${customer.id}"
+                                ${customer.id === customerId ? "selected" : ""}
+                            >
+                                ${escapeHTML(customer.name)}
+                            </option>
+                        `)
+                        .join("")
+                    }
 
                 </select>
 
@@ -1646,43 +4177,41 @@ function transactionFormHTML(
 
                 <div class="transaction-types">
 
-                    ${transactionTypeButton(
-                        "sale",
-                        "↑",
-                        "Credit Sale",
-                        "Customer owes Al Jefoon"
-                    )}
+    ${transactionTypeButton(
+        "sale",
+        "↑",
+        "Credit Sale",
+        "Customer owes Al Jefoon"
+    )}
 
-                    ${transactionTypeButton(
-                        "payment_received",
-                        "↓",
-                        "Payment Received",
-                        "Payment received from customer"
-                    )}
+    ${transactionTypeButton(
+        "payment_received",
+        "↓",
+        "Payment Received",
+        "Payment received from customer"
+    )}
 
-                    ${transactionTypeButton(
-                        "purchase",
-                        "▤",
-                        "Credit Purchase",
-                        "Al Jefoon owes supplier"
-                    )}
+    ${transactionTypeButton(
+        "purchase",
+        "▤",
+        "Credit Purchase",
+        "Al Jefoon owes supplier"
+    )}
 
-                    ${transactionTypeButton(
-                        "payment_made",
-                        "↓",
-                        "Payment Made",
-                        "Payment made to supplier"
-                    )}
+    ${transactionTypeButton(
+        "payment_made",
+        "↓",
+        "Payment Made",
+        "Payment made to supplier"
+    )}
 
-                </div>
-
+</div>
 
                 <input
-                    type="hidden"
-                    id="transactionType"
-                    value="sale"
-                >
-
+    type="hidden"
+    id="transactionType"
+    value="${transaction?.type || "sale"}"
+>
             </div>
 
 
@@ -1700,7 +4229,7 @@ function transactionFormHTML(
                         class="form-control"
                         id="transactionDate"
                         type="date"
-                        value="${todayISO()}"
+                        value="${transaction?.date || todayISO()}"
                         required
                     >
 
@@ -1720,6 +4249,7 @@ function transactionFormHTML(
                         type="number"
                         min="0.01"
                         step="0.01"
+                        value="${transaction?.amount ?? ""}"
                         required
                         placeholder="0.00"
                     >
@@ -1737,6 +4267,7 @@ function transactionFormHTML(
                     <input
                         class="form-control"
                         id="transactionDescription"
+                        value="${escapeAttribute(transaction?.description || "")}"
                         required
                         placeholder="e.g. Tent rental, invoice payment, advance..."
                     >
@@ -1749,322 +4280,121 @@ function transactionFormHTML(
             <div id="paymentDetails">
 
                 <div class="form-section">
-
-                    <div class="form-section-title">
-                        Payment Details
-                    </div>
-
-
-                    <div class="form-group">
-
-                        <label class="form-label">
-                            Payment Method
-                        </label>
-
-                        <select
-                            class="form-control"
-                            id="paymentMethod"
-                        >
-
-                            <option value="Cash">
-                                Cash
-                            </option>
-
-                            <option value="Cheque">
-                                Cheque
-                            </option>
-
-                            <option value="Bank Transfer">
-                                Bank Transfer
-                            </option>
-
-                            <option value="BOTIM Transfer">
-                                BOTIM Transfer
-                            </option>
-
-                            <option value="Other">
-                                Other
-                            </option>
-
-                        </select>
-
-                    </div>
-
-
-                    <div
-                        id="chequeDetails"
-                        class="cheque-panel hidden"
-                    >
-
-                        <div class="cheque-panel-title">
-                            ▭ Cheque Details
-                        </div>
-
-
-                        <div class="form-grid">
-
-                            <div class="form-group">
-
-                                <label class="form-label">
-                                    Cheque Number
-                                    <span class="required">*</span>
-                                </label>
-
-                                <input
-                                    class="form-control"
-                                    id="chequeNumber"
-                                    placeholder="Cheque number"
-                                >
-
-                            </div>
-
-
-                            <div class="form-group">
-
-                                <label class="form-label">
-                                    Bank Name
-                                </label>
-
-                                <input
-                                    class="form-control"
-                                    id="chequeBank"
-                                    placeholder="Bank name"
-                                >
-
-                            </div>
-
-
-                            <div class="form-group">
-
-                                <label class="form-label">
-                                    Cheque Date
-                                </label>
-
-                                <input
-                                    class="form-control"
-                                    id="chequeDate"
-                                    type="date"
-                                    value="${todayISO()}"
-                                >
-
-                            </div>
-
-
-                            <div class="form-group">
-
-                                <label class="form-label">
-                                    Expected Clearance
-                                </label>
-
-                                <input
-                                    class="form-control"
-                                    id="chequeClearanceDate"
-                                    type="date"
-                                >
-
-                                <div class="form-help">
-                                    The app will alert you 5 days before this date.
-                                </div>
-
-                            </div>
-
-
-                            <div class="form-group">
-
-                                <label class="form-label">
-                                    Drawer / Account Name
-                                </label>
-
-                                <input
-                                    class="form-control"
-                                    id="chequeDrawer"
-                                    placeholder="Name on cheque"
-                                >
-
-                            </div>
-
-
-                            <div class="form-group">
-
-                                <label class="form-label">
-                                    Cheque Status
-                                </label>
-
-                                <select
-                                    class="form-control"
-                                    id="chequeStatus"
-                                >
-
-                                    <option value="Issued">
-                                        Issued
-                                    </option>
-
-                                    <option value="Deposited">
-                                        Deposited
-                                    </option>
-
-                                    <option value="Cleared">
-                                        Cleared
-                                    </option>
-
-                                    <option value="Returned/Bounced">
-                                        Returned / Bounced
-                                    </option>
-
-                                    <option value="Cancelled">
-                                        Cancelled
-                                    </option>
-
-                                </select>
-
-                            </div>
-
-                        </div>
-
-                    </div>
-
-                </div>
-
-            </div>
-
-
-            <div class="form-group"
-                 style="margin-top:18px;">
-
-                <label class="form-label">
-                    Reference / Notes
-                </label>
-
-                <textarea
-                    class="form-control"
-                    id="transactionNotes"
-                    placeholder="Invoice number, receipt number, additional notes..."
-                ></textarea>
-
-            </div>
-
-
-            <div class="modal-footer">
-
-                <button
-                    type="button"
-                    class="secondary-button"
-                    id="cancelTransaction"
-                >
-                    Cancel
-                </button>
-
-                <button
-                    type="submit"
-                    class="primary-button"
-                >
-                    Save Transaction
-                </button>
-
-            </div>
-
-        </form>
-    `;
-}
-
-/* =========================================================
-   TRANSACTION TYPE BUTTON
-========================================================= */
-
-function transactionTypeButton(
+                function transactionTypeButton(
     type,
     icon,
     title,
     description
 ) {
 
+    const currentType =
+        arguments.length > 4
+            ? arguments[4]
+            : null;
+
     return `
 
         <button
             type="button"
-            class="transaction-type ${
-                type === "sale"
-                    ? "selected"
+            class="transaction-type-button ${
+                (
+                    currentType ||
+                    "sale"
+                ) === type
+                    ? "active"
                     : ""
             }"
             data-transaction-type="${type}"
         >
 
-            <div class="transaction-type-icon">
+            <span class="transaction-type-icon">
                 ${icon}
-            </div>
+            </span>
 
-            <div class="transaction-type-title">
-                ${escapeHTML(title)}
-            </div>
+            <span class="transaction-type-content">
 
-            <div class="transaction-type-description">
-                ${escapeHTML(description)}
-            </div>
+                <span class="transaction-type-title">
+                    ${title}
+                </span>
+
+                <span class="transaction-type-description">
+                    ${description}
+                </span>
+
+            </span>
 
         </button>
+
     `;
 }
 
+
 /* =========================================================
-   SETUP TRANSACTION FORM
+   TRANSACTION FORM SETUP
 ========================================================= */
 
 function setupTransactionForm() {
 
-    document
-        .querySelectorAll(
-            "[data-transaction-type]"
-        )
-        .forEach(button => {
+    const form =
+        document.getElementById(
+            "transactionForm"
+        );
 
-            button.addEventListener(
-                "click",
-                () => {
+    if (!form) return;
 
-                    document
-                        .querySelectorAll(
-                            "[data-transaction-type]"
-                        )
-                        .forEach(
-                            item =>
-                                item.classList.remove(
-                                    "selected"
-                                )
+
+    const typeButtons =
+        document.querySelectorAll(
+            ".transaction-type-button"
+        );
+
+    const typeInput =
+        document.getElementById(
+            "transactionType"
+        );
+
+
+    typeButtons.forEach(button => {
+
+        button.addEventListener(
+            "click",
+            () => {
+
+                typeButtons.forEach(
+                    item => {
+                        item.classList.remove(
+                            "active"
                         );
+                    }
+                );
 
-                    button.classList.add(
-                        "selected"
-                    );
+                button.classList.add(
+                    "active"
+                );
 
-                    document
-                        .getElementById(
-                            "transactionType"
-                        )
-                        .value =
-                        button.dataset
-                            .transactionType;
+                typeInput.value =
+                    button.dataset.transactionType;
 
-                    updatePaymentVisibility();
-                }
-            );
-        });
+                updatePaymentVisibility();
+            }
+        );
+
+    });
 
 
-    document
-        .getElementById("paymentMethod")
-        ?.addEventListener(
+    const paymentMethod =
+        document.getElementById(
+            "paymentMethod"
+        );
+
+    if (paymentMethod) {
+
+        paymentMethod.addEventListener(
             "change",
             updateChequeVisibility
         );
 
-
-    document
-        .getElementById("transactionForm")
-        ?.addEventListener(
-            "submit",
-            saveTransaction
-        );
+    }
 
 
     document
@@ -2076,6 +4406,13 @@ function setupTransactionForm() {
 
 
     updatePaymentVisibility();
+
+
+    form.addEventListener(
+        "submit",
+        saveTransaction
+    );
+
 }
 
 
@@ -2090,56 +4427,62 @@ function updatePaymentVisibility() {
             "transactionType"
         )?.value;
 
+
     const paymentDetails =
         document.getElementById(
             "paymentDetails"
         );
 
+
     if (!paymentDetails) return;
 
-    const isPayment =
+
+    const showPayment =
         type === "payment_received" ||
         type === "payment_made";
 
+
     paymentDetails.classList.toggle(
         "hidden",
-        !isPayment
+        !showPayment
     );
 
-    if (!isPayment) {
 
-        const chequeDetails =
-            document.getElementById(
-                "chequeDetails"
-            );
+    if (showPayment) {
 
-        chequeDetails?.classList.add(
-            "hidden"
-        );
+        updateChequeVisibility();
+
     }
+
 }
+
+
 /* =========================================================
    CHEQUE VISIBILITY
 ========================================================= */
 
 function updateChequeVisibility() {
 
-    const method =
+    const paymentMethod =
         document.getElementById(
             "paymentMethod"
         )?.value;
 
-    const panel =
+
+    const chequeDetails =
         document.getElementById(
             "chequeDetails"
         );
 
-    if (!panel) return;
 
-    panel.classList.toggle(
+    if (!chequeDetails) return;
+
+
+    chequeDetails.classList.toggle(
         "hidden",
-        method !== "Cheque"
+        paymentMethod !== "Cheque"
     );
+
 }
 
 
@@ -2151,33 +4494,70 @@ function saveTransaction(event) {
 
     event.preventDefault();
 
-    const customerId =
+
+    const customerElement =
         document.getElementById(
             "transactionCustomer"
-        ).value;
+        );
 
-    const type =
+    const amountElement =
+        document.getElementById(
+            "transactionAmount"
+        );
+
+    const dateElement =
+        document.getElementById(
+            "transactionDate"
+        );
+
+    const descriptionElement =
+        document.getElementById(
+            "transactionDescription"
+        );
+
+    const typeElement =
         document.getElementById(
             "transactionType"
-        ).value;
+        );
+
+
+    if (
+        !customerElement ||
+        !amountElement ||
+        !dateElement ||
+        !descriptionElement ||
+        !typeElement
+    ) {
+
+        showToast(
+            "Transaction form could not be loaded.",
+            "!"
+        );
+
+        return;
+    }
+
+
+    const customerId =
+        customerElement.value;
+
 
     const amount =
         Number(
-            document.getElementById(
-                "transactionAmount"
-            ).value
+            amountElement.value
         );
 
+
     const date =
-        document.getElementById(
-            "transactionDate"
-        ).value;
+        dateElement.value;
+
 
     const description =
-        document.getElementById(
-            "transactionDescription"
-        ).value
-        .trim();
+        descriptionElement.value.trim();
+
+
+    const type =
+        typeElement.value;
 
 
     if (!customerId) {
@@ -2192,7 +4572,7 @@ function saveTransaction(event) {
 
 
     if (
-        !amount ||
+        !Number.isFinite(amount) ||
         amount <= 0
     ) {
 
@@ -2208,7 +4588,7 @@ function saveTransaction(event) {
     if (!date) {
 
         showToast(
-            "Please select a date.",
+            "Please select a transaction date.",
             "!"
         );
 
@@ -2227,146 +4607,2524 @@ function saveTransaction(event) {
     }
 
 
-    const transaction = {
+    const paymentMethod =
+        document.getElementById(
+            "paymentMethod"
+        )?.value || "";
+
+
+    const chequeNumber =
+        document.getElementById(
+            "chequeNumber"
+        )?.value.trim() || "";
+
+
+    if (
+        paymentMethod === "Cheque" &&
+        (
+            type === "payment_received" ||
+            type === "payment_made"
+        ) &&
+        !chequeNumber
+    ) {
+
+        showToast(
+            "Please enter the cheque number.",
+            "!"
+        );
+
+        return;
+    }
+
+
+    const notes =
+        document.getElementById(
+            "transactionNotes"
+        )?.value.trim() || "";
+
+
+    const existingTransaction =
+        editingTransactionId
+            ? appData.transactions.find(
+                transaction =>
+                    transaction.id ===
+                    editingTransactionId
+            )
+            : null;
+
+
+    const transactionData = {
 
         id:
+            existingTransaction?.id ||
             makeId("transaction"),
 
         customerId,
 
         type,
 
-        amount,
-
         date,
+
+        amount,
 
         description,
 
         paymentMethod:
             type === "payment_received" ||
             type === "payment_made"
-                ? document.getElementById(
-                    "paymentMethod"
-                ).value
+                ? paymentMethod
                 : "",
 
-        notes:
-            document.getElementById(
-                "transactionNotes"
-            ).value
-            .trim(),
+        notes,
 
         createdAt:
+            existingTransaction?.createdAt ||
+            new Date().toISOString(),
+
+        updatedAt:
             new Date().toISOString()
+
     };
 
 
-    appData.transactions.push(
-        transaction
-    );
+    if (existingTransaction) {
+
+        Object.assign(
+            existingTransaction,
+            transactionData
+        );
+
+    } else {
+
+        appData.transactions.push(
+            transactionData
+        );
+
+    }
 
 
-    /* -----------------------------------------------------
-       CHEQUE
-    ----------------------------------------------------- */
+    const existingCheque =
+        appData.cheques.find(
+            cheque =>
+                cheque.transactionId ===
+                transactionData.id
+        );
 
-    if (
+
+    const isCheque =
+        paymentMethod === "Cheque" &&
         (
             type === "payment_received" ||
             type === "payment_made"
-        ) &&
-        transaction.paymentMethod ===
-            "Cheque"
-    ) {
-
-        const chequeNumber =
-            document.getElementById(
-                "chequeNumber"
-            ).value
-            .trim();
+        );
 
 
-        if (!chequeNumber) {
+    if (isCheque) {
 
-            showToast(
-                "Please enter the cheque number.",
-                "!"
-            );
-
-            appData.transactions.pop();
-
-            return;
-        }
-
-
-        const cheque = {
+        const chequeData = {
 
             id:
+                existingCheque?.id ||
                 makeId("cheque"),
 
             transactionId:
-                transaction.id,
+                transactionData.id,
 
             customerId,
-
-            amount,
 
             chequeNumber,
 
             bank:
-                document.getElementById(
-                    "chequeBank"
-                ).value
-                .trim(),
+                document
+                    .getElementById("chequeBank")
+                    ?.value.trim() || "",
 
             chequeDate:
-                document.getElementById(
-                    "chequeDate"
-                ).value,
+                document
+                    .getElementById("chequeDate")
+                    ?.value ||
+                date,
 
             clearanceDate:
-                document.getElementById(
-                    "chequeClearanceDate"
-                ).value,
+                document
+                    .getElementById(
+                        "chequeClearanceDate"
+                    )
+                    ?.value || "",
 
             drawer:
-                document.getElementById(
-                    "chequeDrawer"
-                ).value
-                .trim(),
+                document
+                    .getElementById("chequeDrawer")
+                    ?.value.trim() || "",
 
             status:
-                document.getElementById(
-                    "chequeStatus"
-                ).value,
+                document
+                    .getElementById("chequeStatus")
+                    ?.value ||
+                "Issued"
 
-            createdAt:
-                new Date().toISOString()
         };
 
 
-        appData.cheques.push(
-            cheque
+        if (existingCheque) {
+
+            Object.assign(
+                existingCheque,
+                chequeData
+            );
+
+        } else {
+
+            appData.cheques.push(
+                chequeData
+            );
+
+        }
+
+    } else if (existingCheque) {
+
+        appData.cheques =
+            appData.cheques.filter(
+                cheque =>
+                    cheque.transactionId !==
+                    transactionData.id
+            );
+
+    }
+
+
+    try {
+
+        saveData();
+
+    } catch (error) {
+
+        console.error(
+            "Failed to save transaction:",
+            error
         );
+
+        showToast(
+            "Transaction could not be saved.",
+            "!"
+        );
+
+        return;
+    }
+
+
+    closeModal();
+
+
+    const wasEditing =
+        Boolean(editingTransactionId);
+
+
+    editingTransactionId =
+        null;
+
+
+    showToast(
+        wasEditing
+            ? "Transaction updated successfully."
+            : "Transaction saved successfully."
+    );
+
+
+    if (selectedCustomerId) {
+
+        renderCustomerStatement(
+            selectedCustomerId
+        );
+
+    } else {
+
+        renderView(
+            currentView || "dashboard"
+        );
+
+    }
+
+}
+
+
+/* =========================================================
+   STATEMENTS
+========================================================= */
+
+function renderStatements() {
+
+    const customers =
+        [...appData.customers]
+            .sort(
+                (a, b) =>
+                    a.name.localeCompare(
+                        b.name
+                    )
+            );
+
+
+    appContent.innerHTML = `
+
+        <div class="page-header">
+
+            <div>
+
+                <h1>Customer Statements</h1>
+
+                <p>
+                    View customer balances and detailed account statements.
+                </p>
+
+            </div>
+
+        </div>
+
+
+        <div class="card">
+
+            <div class="search-box">
+
+                <span class="search-icon">
+                    ⌕
+                </span>
+
+                <input
+                    id="statementSearch"
+                    type="search"
+                    placeholder="Search customers..."
+                >
+
+            </div>
+
+        </div>
+
+
+        <div
+            id="statementsCustomerList"
+            class="customer-grid"
+        >
+
+            ${
+                customers.length
+                    ? customers
+                        .map(
+                            customer =>
+                                statementCustomerCardHTML(
+                                    customer
+                                )
+                        )
+                        .join("")
+                    : emptyStateHTML(
+                        "No Customers",
+                        "Add a customer to create statements."
+                    )
+            }
+
+        </div>
+    `;
+
+
+    document
+        .getElementById(
+            "statementSearch"
+        )
+        ?.addEventListener(
+            "input",
+            event => {
+
+                const search =
+                    event.target.value
+                        .trim()
+                        .toLowerCase();
+
+
+                const filtered =
+                    customers.filter(
+                        customer =>
+                            customer.name
+                                .toLowerCase()
+                                .includes(search) ||
+                            (
+                                customer.phone ||
+                                ""
+                            )
+                                .toLowerCase()
+                                .includes(search)
+                    );
+
+
+                const container =
+                    document.getElementById(
+                        "statementsCustomerList"
+                    );
+
+
+                if (!container) return;
+
+
+                container.innerHTML =
+                    filtered.length
+                        ? filtered
+                            .map(
+                                customer =>
+                                    statementCustomerCardHTML(
+                                        customer
+                                    )
+                            )
+                            .join("")
+                        : emptyStateHTML(
+                            "No Customers Found",
+                            "Try a different search."
+                        );
+
+
+                setupStatementCustomerButtons();
+
+            }
+        );
+
+
+    setupStatementCustomerButtons();
+}
+                    button.dataset
+                            .transactionType;
+                    updatePaymentVisibility();
+                }
+            );
+
+        });
+
+
+    const paymentMethod =
+        document.getElementById(
+            "paymentMethod"
+        );
+
+    if (paymentMethod) {
+
+        paymentMethod.addEventListener(
+            "change",
+            updateChequeVisibility
+        );
+
+    }
+
+
+    updatePaymentVisibility();
+
+
+    document
+        .getElementById(
+            "transactionForm"
+        )
+        ?.addEventListener(
+            "submit",
+            saveTransaction
+        );
+
+}
+
+
+/* =========================================================
+   PAYMENT VISIBILITY
+========================================================= */
+
+function updatePaymentVisibility() {
+
+    const type =
+        document.getElementById(
+            "transactionType"
+        )?.value;
+
+
+    const paymentDetails =
+        document.getElementById(
+            "paymentDetails"
+        );
+
+
+    if (!paymentDetails) return;
+
+
+    const needsPaymentDetails =
+        type === "payment_received" ||
+        type === "payment_made";
+
+
+    paymentDetails.classList.toggle(
+        "hidden",
+        !needsPaymentDetails
+    );
+
+
+    if (needsPaymentDetails) {
+
+        updateChequeVisibility();
+
+    }
+
+}
+
+
+/* =========================================================
+   CHEQUE VISIBILITY
+========================================================= */
+
+function updateChequeVisibility() {
+
+    const paymentMethod =
+        document.getElementById(
+            "paymentMethod"
+        )?.value;
+
+
+    const chequeDetails =
+        document.getElementById(
+            "chequeDetails"
+        );
+
+
+    if (!chequeDetails) return;
+
+
+    chequeDetails.classList.toggle(
+        "hidden",
+        paymentMethod !== "Cheque"
+    );
+
+}
+
+
+/* =========================================================
+   SAVE TRANSACTION
+========================================================= */
+
+function saveTransaction(event) {
+
+    event.preventDefault();
+
+
+    const customerId =
+        document.getElementById(
+            "transactionCustomer"
+        )?.value;
+
+
+    const type =
+        document.getElementById(
+            "transactionType"
+        )?.value;
+
+
+    const date =
+        document.getElementById(
+            "transactionDate"
+        )?.value;
+
+
+    const amount =
+        Number(
+            document.getElementById(
+                "transactionAmount"
+            )?.value
+        );
+
+
+    const description =
+        document.getElementById(
+            "transactionDescription"
+        )?.value
+            .trim();
+
+
+    if (!customerId) {
+
+        showToast(
+            "Please select a customer.",
+            "!"
+        );
+
+        return;
+    }
+
+
+    if (!type) {
+
+        showToast(
+            "Please select a transaction type.",
+            "!"
+        );
+
+        return;
+    }
+
+
+    if (!date) {
+
+        showToast(
+            "Please select a date.",
+            "!"
+        );
+
+        return;
+    }
+
+
+    if (
+        !Number.isFinite(amount) ||
+        amount <= 0
+    ) {
+
+        showToast(
+            "Please enter a valid amount.",
+            "!"
+        );
+
+        return;
+    }
+
+
+    if (!description) {
+
+        showToast(
+            "Please enter a description.",
+            "!"
+        );
+
+        return;
+    }
+
+
+    const paymentMethod =
+        document.getElementById(
+            "paymentMethod"
+        )?.value || "";
+
+
+    const chequeNumber =
+        document.getElementById(
+            "chequeNumber"
+        )?.value
+            .trim() || "";
+
+
+    if (
+        paymentMethod === "Cheque" &&
+        (
+            type === "payment_received" ||
+            type === "payment_made"
+        ) &&
+        !chequeNumber
+    ) {
+
+        showToast(
+            "Please enter the cheque number.",
+            "!"
+        );
+
+        return;
+    }
+
+
+    const notes =
+        document.getElementById(
+            "transactionNotes"
+        )?.value
+            .trim() || "";
+
+
+    const transactionId =
+        editingTransactionId ||
+        makeId("transaction");
+
+
+    const existingTransaction =
+        appData.transactions.find(
+            transaction =>
+                transaction.id ===
+                transactionId
+        );
+
+
+    const transaction = {
+
+        id: transactionId,
+
+        customerId,
+
+        type,
+
+        date,
+
+        amount,
+
+        description,
+
+        paymentMethod:
+            type === "payment_received" ||
+            type === "payment_made"
+                ? paymentMethod
+                : "",
+
+        notes,
+
+        createdAt:
+            existingTransaction?.createdAt ||
+            new Date().toISOString(),
+
+        updatedAt:
+            new Date().toISOString()
+
+    };
+
+
+    if (existingTransaction) {
+
+        Object.assign(
+            existingTransaction,
+            transaction
+        );
+
+    } else {
+
+        appData.transactions.push(
+            transaction
+        );
+
+    }
+
+
+    const existingCheque =
+        appData.cheques.find(
+            cheque =>
+                cheque.transactionId ===
+                transactionId
+        );
+
+
+    const chequePayment =
+        paymentMethod === "Cheque" &&
+        (
+            type === "payment_received" ||
+            type === "payment_made"
+        );
+
+
+    if (chequePayment) {
+
+        const cheque = {
+
+            id:
+                existingCheque?.id ||
+                makeId("cheque"),
+
+            transactionId,
+
+            customerId,
+
+            chequeNumber,
+
+            bank:
+                document
+                    .getElementById(
+                        "chequeBank"
+                    )
+                    ?.value
+                    .trim() || "",
+
+            chequeDate:
+                document
+                    .getElementById(
+                        "chequeDate"
+                    )
+                    ?.value ||
+                date,
+
+            clearanceDate:
+                document
+                    .getElementById(
+                        "chequeClearanceDate"
+                    )
+                    ?.value || "",
+
+            drawer:
+                document
+                    .getElementById(
+                        "chequeDrawer"
+                    )
+                    ?.value
+                    .trim() || "",
+
+            status:
+                document
+                    .getElementById(
+                        "chequeStatus"
+                    )
+                    ?.value ||
+                "Issued"
+
+        };
+
+
+        if (existingCheque) {
+
+            Object.assign(
+                existingCheque,
+                cheque
+            );
+
+        } else {
+
+            appData.cheques.push(
+                cheque
+            );
+
+        }
+
+    } else if (existingCheque) {
+
+        appData.cheques =
+            appData.cheques.filter(
+                cheque =>
+                    cheque.transactionId !==
+                    transactionId
+            );
+
     }
 
 
     saveData();
 
+
+    const wasEditing =
+        Boolean(
+            editingTransactionId
+        );
+
+
+    editingTransactionId = null;
+
+
     closeModal();
 
+
     showToast(
-        "Transaction saved successfully."
+        wasEditing
+            ? "Transaction updated successfully."
+            : "Transaction saved successfully."
     );
 
 
+    if (selectedCustomerId) {
+
+        renderCustomerStatement(
+            selectedCustomerId
+        );
+
+    } else {
+
+        renderView(
+            currentView
+        );
+
+    }
+
+}
+
+
+/* =========================================================
+   STATEMENTS
+========================================================= */
+
+function renderStatements() {
+
+    const customers =
+        [...appData.customers]
+            .sort(
+                (a, b) =>
+                    a.name.localeCompare(
+                        b.name
+                    )
+            );
+
+
+    appContent.innerHTML = `
+
+        <div class="page-header">
+
+            <div>
+
+                <h1>Customer Statements</h1>
+
+                <p>
+                    View customer balances and detailed statements.
+                </p>
+
+            </div>
+
+        </div>
+
+
+        <div class="card">
+
+            <div class="search-box">
+
+                <span class="search-icon">
+                    ⌕
+                </span>
+
+                <input
+                    type="search"
+                    id="statementSearch"
+                    placeholder="Search customers..."
+                >
+
+            </div>
+
+        </div>
+
+
+        <div
+            id="statementsCustomerList"
+            class="customer-grid"
+        >
+
+            ${
+                customers.length
+                    ? customers
+                        .map(
+                            customer =>
+                                statementCustomerCardHTML(
+                                    customer
+                                )
+                        )
+                        .join("")
+                    : emptyStateHTML(
+                        "No Customers",
+                        "Add a customer to create statements."
+                    )
+            }
+
+        </div>
+
+    `;
+
+
+    document
+        .getElementById(
+            "statementSearch"
+        )
+        ?.addEventListener(
+            "input",
+            event => {
+
+                const search =
+                    event.target.value
+                        .trim()
+                        .toLowerCase();
+
+
+                const filtered =
+                    customers.filter(
+                        customer =>
+                            customer.name
+                                .toLowerCase()
+                                .includes(search) ||
+                            (
+                                customer.phone ||
+                                ""
+                            )
+                                .toLowerCase()
+                                .includes(search)
+                    );
+
+
+                const container =
+                    document.getElementById(
+                        "statementsCustomerList"
+                    );
+
+
+                if (!container) return;
+
+
+                container.innerHTML =
+                    filtered.length
+                        ? filtered
+                            .map(
+                                customer =>
+                                    statementCustomerCardHTML(
+                                        customer
+                                    )
+                            )
+                            .join("")
+                        : emptyStateHTML(
+                            "No Customers Found",
+                            "Try a different search."
+                        );
+
+
+                setupStatementCustomerButtons();
+
+            }
+        );
+
+
+    setupStatementCustomerButtons();
+
+}
+/* =========================================================
+   SAVE TRANSACTION
+========================================================= */
+
+function saveTransaction(event) {
+
+    event.preventDefault();
+
+    const customerElement =
+        document.getElementById(
+            "transactionCustomer"
+        );
+
+    const amountElement =
+        document.getElementById(
+            "transactionAmount"
+        );
+
+    const dateElement =
+        document.getElementById(
+            "transactionDate"
+        );
+
+    const descriptionElement =
+        document.getElementById(
+            "transactionDescription"
+        );
+
+    const typeElement =
+        document.getElementById(
+            "transactionType"
+        );
+
+    if (
+        !customerElement ||
+        !amountElement ||
+        !dateElement ||
+        !descriptionElement ||
+        !typeElement
+    ) {
+
+        showToast(
+            "Transaction form could not be loaded.",
+            "!"
+        );
+
+        return;
+    }
+
+    const customerId =
+        customerElement.value;
+
+    const amount =
+        Number(
+            amountElement.value
+        );
+
+    const date =
+        dateElement.value;
+
+    const description =
+        descriptionElement.value.trim();
+
+    const type =
+        typeElement.value;
+
+    if (!customerId) {
+
+        showToast(
+            "Please select a customer.",
+            "!"
+        );
+
+        return;
+    }
+
+    if (
+        !Number.isFinite(amount) ||
+        amount <= 0
+    ) {
+
+        showToast(
+            "Please enter a valid amount.",
+            "!"
+        );
+
+        return;
+    }
+
+    if (!date) {
+
+        showToast(
+            "Please select a transaction date.",
+            "!"
+        );
+
+        return;
+    }
+
+    if (!description) {
+
+        showToast(
+            "Please enter a description.",
+            "!"
+        );
+
+        return;
+    }
+
+    const paymentMethod =
+        document.getElementById(
+            "paymentMethod"
+        )?.value || "";
+
+    const chequeNumber =
+        document.getElementById(
+            "chequeNumber"
+        )?.value.trim() || "";
+
+    if (
+        paymentMethod === "Cheque" &&
+        (
+            type === "payment_received" ||
+            type === "payment_made"
+        ) &&
+        !chequeNumber
+    ) {
+
+        showToast(
+            "Please enter the cheque number.",
+            "!"
+        );
+
+        return;
+    }
+
+    const notes =
+        document.getElementById(
+            "transactionNotes"
+        )?.value.trim() || "";
+
+    const existingTransaction =
+        editingTransactionId
+            ? appData.transactions.find(
+                transaction =>
+                    transaction.id ===
+                    editingTransactionId
+            )
+            : null;
+
+    const transactionData = {
+
+        id:
+            existingTransaction?.id ||
+            makeId("transaction"),
+
+        customerId,
+
+        type,
+
+        date,
+
+        amount,
+
+        description,
+
+        paymentMethod:
+            type === "payment_received" ||
+            type === "payment_made"
+                ? paymentMethod
+                : "",
+
+        notes,
+
+        createdAt:
+            existingTransaction?.createdAt ||
+            new Date().toISOString(),
+
+        updatedAt:
+            new Date().toISOString()
+
+    };
+
+    if (existingTransaction) {
+
+        Object.assign(
+            existingTransaction,
+            transactionData
+        );
+
+    } else {
+
+        appData.transactions.push(
+            transactionData
+        );
+
+    }
+
+    const existingCheque =
+        appData.cheques.find(
+            cheque =>
+                cheque.transactionId ===
+                transactionData.id
+        );
+
+    const isCheque =
+        paymentMethod === "Cheque" &&
+        (
+            type === "payment_received" ||
+            type === "payment_made"
+        );
+
+    if (isCheque) {
+
+        const chequeData = {
+
+            id:
+                existingCheque?.id ||
+                makeId("cheque"),
+
+            transactionId:
+                transactionData.id,
+
+            customerId,
+
+            chequeNumber,
+
+            bank:
+                document
+                    .getElementById("chequeBank")
+                    ?.value.trim() || "",
+
+            chequeDate:
+                document
+                    .getElementById("chequeDate")
+                    ?.value ||
+                date,
+
+            clearanceDate:
+                document
+                    .getElementById(
+                        "chequeClearanceDate"
+                    )
+                    ?.value || "",
+
+            drawer:
+                document
+                    .getElementById("chequeDrawer")
+                    ?.value.trim() || "",
+
+            status:
+                document
+                    .getElementById("chequeStatus")
+                    ?.value ||
+                "Issued"
+
+        };
+
+        if (existingCheque) {
+
+            Object.assign(
+                existingCheque,
+                chequeData
+            );
+
+        } else {
+
+            appData.cheques.push(
+                chequeData
+            );
+
+        }
+
+    } else if (existingCheque) {
+
+        appData.cheques =
+            appData.cheques.filter(
+                cheque =>
+                    cheque.transactionId !==
+                    transactionData.id
+            );
+
+    }
+
+    try {
+
+        saveData();
+
+    } catch (error) {
+
+        console.error(
+            "Failed to save transaction:",
+            error
+        );
+
+        showToast(
+            "Transaction could not be saved.",
+            "!"
+        );
+
+        return;
+    }
+
+    closeModal();
+
+    const wasEditing =
+        Boolean(
+            editingTransactionId
+        );
+
+    editingTransactionId =
+        null;
+
+    showToast(
+        wasEditing
+            ? "Transaction updated successfully."
+            : "Transaction saved successfully."
+    );
+
+    if (selectedCustomerId) {
+
+        renderCustomerStatement(
+            selectedCustomerId
+        );
+
+    } else {
+
+        renderView(
+            currentView || "dashboard"
+        );
+
+    }
+
+}
+
+
+/* =========================================================
+   STATEMENTS
+========================================================= */
+
+function renderStatements() {
+
+    const customers =
+        [...appData.customers]
+            .sort(
+                (a, b) =>
+                    a.name.localeCompare(
+                        b.name
+                    )
+            );
+
+    appContent.innerHTML = `
+
+        <div class="page-header">
+
+            <div>
+
+                <h1>Customer Statements</h1>
+
+                <p>
+                    View customer balances and detailed account statements.
+                </p>
+
+            </div>
+
+        </div>
+
+        <div class="card">
+
+            <div class="search-box">
+
+                <span class="search-icon">
+                    ⌕
+                </span>
+
+                <input
+                    id="statementSearch"
+                    type="search"
+                    placeholder="Search customers..."
+                >
+
+            </div>
+
+        </div>
+
+        <div
+            id="statementsCustomerList"
+            class="customer-grid"
+        >
+
+            ${
+                customers.length
+                    ? customers
+                        .map(
+                            customer =>
+                                statementCustomerCardHTML(
+                                    customer
+                                )
+                        )
+                        .join("")
+                    : emptyStateHTML(
+                        "No Customers",
+                        "Add a customer to create statements."
+                    )
+            }
+
+        </div>
+    `;
+
+    document
+        .getElementById(
+            "statementSearch"
+        )
+        ?.addEventListener(
+            "input",
+            event => {
+
+                const search =
+                    event.target.value
+                        .trim()
+                        .toLowerCase();
+
+                const filtered =
+                    customers.filter(
+                        customer =>
+                            customer.name
+                                .toLowerCase()
+                                .includes(search) ||
+                            (
+                                customer.phone ||
+                                ""
+                            )
+                                .toLowerCase()
+                                .includes(search)
+                    );
+
+                const container =
+                    document.getElementById(
+                        "statementsCustomerList"
+                    );
+
+                if (!container) return;
+
+                container.innerHTML =
+                    filtered.length
+                        ? filtered
+                            .map(
+                                customer =>
+                                    statementCustomerCardHTML(
+                                        customer
+                                    )
+                            )
+                            .join("")
+                        : emptyStateHTML(
+                            "No Customers Found",
+                            "Try a different search."
+                        );
+
+                setupStatementCustomerButtons();
+
+            }
+        );
+
+    setupStatementCustomerButtons();
+
+}
+/* =========================================================
+   STATEMENT TABLE
+========================================================= */
+
+function statementTableHTML(
+    customer,
+    transactions
+) {
+
+    let runningBalance =
+        Number(
+            customer.openingBalance || 0
+        );
+
+
+    let rows = `
+
+        <table class="data-table">
+
+            <thead>
+
+                <tr>
+
+                    <th>Date</th>
+                    <th>Description</th>
+                    <th>Method</th>
+                    <th>Debit</th>
+                    <th>Credit</th>
+                    <th>Balance</th>
+                    <th>Actions</th>
+
+                </tr>
+
+            </thead>
+
+            <tbody>
+    `;
+
+
+    rows += `
+
+        <tr>
+
+            <td>
+                ${formatDate(customer.createdAt)}
+            </td>
+
+            <td>
+                <strong>Opening Balance</strong>
+            </td>
+
+            <td>
+                <span class="badge badge-neutral">
+                    Opening
+                </span>
+            </td>
+
+            <td>
+                ${
+                    runningBalance > 0
+                        ? formatMoney(
+                            runningBalance
+                        )
+                        : "—"
+                }
+            </td>
+
+            <td>
+                ${
+                    runningBalance < 0
+                        ? formatMoney(
+                            Math.abs(
+                                runningBalance
+                            )
+                        )
+                        : "—"
+                }
+            </td>
+
+            <td>
+                <strong>
+                    ${formatMoney(
+                        Math.abs(
+                            runningBalance
+                        )
+                    )}
+                </strong>
+            </td>
+
+            <td>
+                —
+            </td>
+
+        </tr>
+    `;
+
+
+    const sortedTransactions =
+        [...transactions].sort(
+            (a, b) =>
+                new Date(a.date) -
+                new Date(b.date)
+        );
+
+
+    sortedTransactions.forEach(
+        transaction => {
+
+            const amount =
+                Number(
+                    transaction.amount || 0
+                );
+
+
+            const isSale =
+                transaction.type === "sale";
+
+
+            const isPaymentReceived =
+                transaction.type ===
+                "payment_received";
+
+
+            const isPurchase =
+                transaction.type === "purchase";
+
+
+            const isPaymentMade =
+                transaction.type ===
+                "payment_made";
+
+
+            const isDebit =
+                transaction.type === "debit";
+
+
+            const isCredit =
+                transaction.type === "credit";
+
+
+            if (isSale) {
+
+                runningBalance += amount;
+
+            } else if (
+                isPaymentReceived
+            ) {
+
+                runningBalance -= amount;
+
+            } else if (isPurchase) {
+
+                runningBalance -= amount;
+
+            } else if (isPaymentMade) {
+
+                runningBalance += amount;
+
+            } else if (isDebit) {
+
+                runningBalance += amount;
+
+            } else if (isCredit) {
+
+                runningBalance -= amount;
+
+            }
+
+
+            const debit =
+                isSale ||
+                isPaymentMade ||
+                isDebit;
+
+
+            const credit =
+                isPaymentReceived ||
+                isPurchase ||
+                isCredit;
+
+
+            rows += `
+
+                <tr>
+
+                    <td>
+                        ${formatDate(
+                            transaction.date
+                        )}
+                    </td>
+
+                    <td>
+
+                        <strong>
+                            ${escapeHTML(
+                                transaction.description
+                            )}
+                        </strong>
+
+                        ${
+                            transaction.notes
+                                ? `
+                                    <div
+                                        style="
+                                            margin-top:4px;
+                                            color:var(--muted);
+                                            font-size:10px;
+                                        "
+                                    >
+                                        ${escapeHTML(
+                                            transaction.notes
+                                        )}
+                                    </div>
+                                `
+                                : ""
+                        }
+
+                    </td>
+
+                    <td>
+
+                        ${
+                            transaction.paymentMethod
+                                ? `
+                                    <span class="badge badge-neutral">
+                                        ${escapeHTML(
+                                            transaction.paymentMethod
+                                        )}
+                                    </span>
+                                `
+                                : `
+                                    <span class="badge badge-gold">
+                                        ${escapeHTML(
+                                            transaction.type
+                                        )}
+                                    </span>
+                                `
+                        }
+
+                    </td>
+
+                    <td>
+
+                        ${
+                            debit
+                                ? `
+                                    <span class="amount positive">
+                                        ${formatMoney(
+                                            amount
+                                        )}
+                                    </span>
+                                `
+                                : "—"
+                        }
+
+                    </td>
+
+                    <td>
+
+                        ${
+                            credit
+                                ? `
+                                    <span class="amount negative">
+                                        ${formatMoney(
+                                            amount
+                                        )}
+                                    </span>
+                                `
+                                : "—"
+                        }
+
+                    </td>
+
+                    <td>
+
+                        <strong>
+                            ${formatMoney(
+                                Math.abs(
+                                    runningBalance
+                                )
+                            )}
+                        </strong>
+
+                    </td>
+
+                    <td>
+
+                        <div class="table-actions">
+
+                            <button
+                                type="button"
+                                class="secondary-button edit-transaction-button"
+                                data-transaction-id="${transaction.id}"
+                                style="
+                                    padding:6px 10px;
+                                    font-size:11px;
+                                    white-space:nowrap;
+                                "
+                            >
+                                Edit
+                            </button>
+
+                            <button
+                                type="button"
+                                class="secondary-button danger-action delete-transaction-button"
+                                data-transaction-id="${transaction.id}"
+                                style="
+                                    padding:6px 10px;
+                                    font-size:11px;
+                                    white-space:nowrap;
+                                "
+                            >
+                                Delete
+                            </button>
+
+                        </div>
+
+                    </td>
+
+                </tr>
+            `;
+        }
+    );
+
+
+    rows += `
+
+            </tbody>
+
+        </table>
+    `;
+
+
+    return rows;
+}
+
+
+/* =========================================================
+   PRINT STATEMENTS
+========================================================= */
+
+function printStatements(
+    customerIds = null
+) {
+
+    const customers =
+        customerIds
+            ? appData.customers.filter(
+                customer =>
+                    customerIds.includes(
+                        customer.id
+                    )
+            )
+            : appData.customers;
+
+
+    if (!customers.length) {
+
+        showToast(
+            "No customer statements available.",
+            "!"
+        );
+
+        return;
+    }
+
+
+    const printWindow =
+        window.open(
+            "",
+            "_blank"
+        );
+
+
+    if (!printWindow) {
+
+        showToast(
+            "Please allow pop-ups to print statements.",
+            "!"
+        );
+
+        return;
+    }
+
+
+    const statementSections =
+        customers
+            .map(
+                customer => {
+
+                    const transactions =
+                        getCustomerTransactions(
+                            customer.id
+                        );
+
+                    const balance =
+                        getCustomerBalance(
+                            customer.id
+                        );
+
+                    return `
+
+                        <section class="print-statement">
+
+                            <div class="print-header">
+
+                                <div>
+
+                                    <h1>
+                                        Al Jefoon Tents
+                                    </h1>
+
+                                    <div>
+                                        Customer Account Statement
+                                    </div>
+
+                                </div>
+
+                                <div class="print-customer">
+
+                                    <strong>
+                                        ${escapeHTML(
+                                            customer.name
+                                        )}
+                                    </strong>
+
+                                    ${
+                                        customer.phone
+                                            ? `<div>
+                                                ${escapeHTML(
+                                                    customer.phone
+                                                )}
+                                            </div>`
+                                            : ""
+                                    }
+
+                                    ${
+                                        customer.email
+                                            ? `<div>
+                                                ${escapeHTML(
+                                                    customer.email
+                                                )}
+                                            </div>`
+                                            : ""
+                                    }
+
+                                </div>
+
+                            </div>
+
+                            <div class="print-balance">
+
+                                <div>
+                                    <span>
+                                        Opening Balance
+                                    </span>
+
+                                    <strong>
+                                        ${formatMoney(
+                                            Math.abs(
+                                                Number(
+                                                    customer.openingBalance || 0
+                                                )
+                                            )
+                                        )}
+                                    </strong>
+                                </div>
+
+                                <div>
+                                    <span>
+                                        Current Balance
+                                    </span>
+
+                                    <strong>
+                                        ${formatMoney(
+                                            Math.abs(
+                                                balance
+                                            )
+                                        )}
+                                    </strong>
+                                </div>
+
+                            </div>
+
+                            ${statementTableHTML(
+                                customer,
+                                transactions
+                            )}
+
+                        </section>
+
+                    `;
+                }
+            )
+            .join("");
+
+
+    printWindow.document.open();
+
+
+    printWindow.document.write(`
+
+        <!DOCTYPE html>
+
+        <html>
+
+        <head>
+
+            <meta charset="UTF-8">
+
+            <title>
+                Al Jefoon Tents - Customer Statements
+            </title>
+
+            <style>
+
+                * {
+                    box-sizing:border-box;
+                }
+
+                body {
+                    margin:0;
+                    padding:20px;
+                    font-family:Arial, sans-serif;
+                    color:#111;
+                    background:#fff;
+                }
+
+                .print-statement {
+                    margin-bottom:40px;
+                    page-break-after:always;
+                }
+
+                .print-statement:last-child {
+                    page-break-after:auto;
+                }
+
+                .print-header {
+                    display:flex;
+                    justify-content:space-between;
+                    align-items:flex-start;
+                    border-bottom:2px solid #fcc224;
+                    padding-bottom:14px;
+                    margin-bottom:18px;
+                }
+
+                .print-header h1 {
+                    margin:0 0 5px;
+                    font-size:22px;
+                }
+
+                .print-customer {
+                    text-align:right;
+                }
+
+                .print-balance {
+                    display:flex;
+                    gap:20px;
+                    margin-bottom:18px;
+                }
+
+                .print-balance > div {
+                    border:1px solid #ddd;
+                    padding:10px 14px;
+                    min-width:180px;
+                }
+
+                .print-balance span {
+                    display:block;
+                    font-size:10px;
+                    color:#666;
+                    margin-bottom:4px;
+                }
+
+                .print-balance strong {
+                    font-size:16px;
+                }
+
+                table {
+                    width:100%;
+                    border-collapse:collapse;
+                }
+
+                th,
+                td {
+                    border:1px solid #ddd;
+                    padding:8px;
+                    font-size:11px;
+                    text-align:left;
+                }
+
+                th {
+                    background:#f5f5f5;
+                }
+
+                .table-actions {
+                    display:none;
+                }
+
+                .badge {
+                    display:inline-block;
+                    padding:3px 6px;
+                    border:1px solid #ddd;
+                    border-radius:4px;
+                    font-size:9px;
+                }
+
+                .amount {
+                    font-weight:600;
+                }
+
+                @page {
+                    size:A4 landscape;
+                    margin:12mm;
+                }
+
+            </style>
+
+        </head>
+
+        <body>
+
+            ${statementSections}
+
+        </body>
+
+        </html>
+
+    `);
+
+
+    printWindow.document.close();
+
+
+    printWindow.focus();
+
+
+    setTimeout(
+        () => {
+            printWindow.print();
+        },
+        300
+    );
+
+}
+        ?.addEventListener(
+            "input",
+            applyTransactionFilters
+        );
+
+
+    document
+        .getElementById(
+            "transactionTypeFilter"
+        )
+        ?.addEventListener(
+            "change",
+            applyTransactionFilters
+        );
+
+
+    attachTransactionActionListeners();
+}
+
+
+/* =========================================================
+   APPLY TRANSACTION FILTERS
+========================================================= */
+
+function applyTransactionFilters() {
+
+    const search =
+        document
+            .getElementById(
+                "transactionSearch"
+            )
+            ?.value
+            .trim()
+            .toLowerCase() || "";
+
+
+    const type =
+        document
+            .getElementById(
+                "transactionTypeFilter"
+            )
+            ?.value || "all";
+
+
+    let transactions =
+        [...appData.transactions];
+
+
+    if (search) {
+
+        transactions =
+            transactions.filter(
+                transaction => {
+
+                    const customer =
+                        getCustomer(
+                            transaction.customerId
+                        );
+
+
+                    const customerName =
+                        customer?.name
+                            ?.toLowerCase() || "";
+
+
+                    const description =
+                        (
+                            transaction.description ||
+                            ""
+                        )
+                            .toLowerCase();
+
+
+                    return (
+                        customerName.includes(
+                            search
+                        ) ||
+                        description.includes(
+                            search
+                        )
+                    );
+
+                }
+            );
+
+    }
+
+
+    if (type !== "all") {
+
+        transactions =
+            transactions.filter(
+                transaction =>
+                    transaction.type === type
+            );
+
+    }
+
+
+    const container =
+        document.getElementById(
+            "transactionsTableCard"
+        );
+
+
+    if (!container) return;
+
+
+    container.innerHTML =
+        transactions.length
+            ? transactionTableHTML(
+                transactions
+            )
+            : emptyStateHTML(
+                "No Transactions",
+                "No transactions match the current filters."
+            );
+
+
+    attachTransactionActionListeners();
+
+}
+
+
+/* =========================================================
+   TRANSACTION TABLE
+========================================================= */
+
+function transactionTableHTML(
+    transactions
+) {
+
+    const sorted =
+        [...transactions]
+            .sort(
+                (a, b) =>
+                    new Date(b.date) -
+                    new Date(a.date)
+            );
+
+
+    let rows = `
+
+        <div class="table-wrap">
+
+            <table class="data-table">
+
+                <thead>
+
+                    <tr>
+
+                        <th>Date</th>
+                        <th>Customer</th>
+                        <th>Description</th>
+                        <th>Type</th>
+                        <th>Method</th>
+                        <th>Amount</th>
+                        <th>Actions</th>
+
+                    </tr>
+
+                </thead>
+
+                <tbody>
+    `;
+
+
+    sorted.forEach(
+        transaction => {
+
+            const customer =
+                getCustomer(
+                    transaction.customerId
+                );
+
+
+            const amount =
+                Number(
+                    transaction.amount || 0
+                );
+
+
+            const typeLabel =
+                transaction.type === "sale"
+                    ? "Sale"
+                    : transaction.type ===
+                      "payment_received"
+                        ? "Payment Received"
+                        : transaction.type ===
+                          "purchase"
+                            ? "Purchase"
+                            : transaction.type ===
+                              "payment_made"
+                                ? "Payment Made"
+                                : transaction.type ===
+                                  "debit"
+                                    ? "Debit"
+                                    : transaction.type ===
+                                      "credit"
+                                        ? "Credit"
+                                        : "Adjustment";
+
+
+            rows += `
+
+                <tr>
+
+                    <td>
+                        ${formatDate(
+                            transaction.date
+                        )}
+                    </td>
+
+
+                    <td>
+
+                        <strong>
+                            ${escapeHTML(
+                                customer?.name ||
+                                "Unknown Customer"
+                            )}
+                        </strong>
+
+                    </td>
+
+
+                    <td>
+
+                        ${escapeHTML(
+                            transaction.description ||
+                            ""
+                        )}
+
+                        ${
+                            transaction.notes
+                                ? `
+                                    <div
+                                        style="
+                                            margin-top:4px;
+                                            color:var(--muted);
+                                            font-size:10px;
+                                        "
+                                    >
+                                        ${escapeHTML(
+                                            transaction.notes
+                                        )}
+                                    </div>
+                                `
+                                : ""
+                        }
+
+                    </td>
+
+
+                    <td>
+
+                        <span class="badge badge-gold">
+                            ${typeLabel}
+                        </span>
+
+                    </td>
+
+
+                    <td>
+
+                        ${
+                            transaction.paymentMethod
+                                ? `
+                                    <span class="badge badge-neutral">
+                                        ${escapeHTML(
+                                            transaction.paymentMethod
+                                        )}
+                                    </span>
+                                `
+                                : "—"
+                        }
+
+                    </td>
+
+
+                    <td>
+
+                        <strong>
+                            ${formatMoney(
+                                amount
+                            )}
+                        </strong>
+
+                    </td>
+
+
+                    <td>
+
+                        <div class="table-actions">
+
+                            <button
+                                type="button"
+                                class="secondary-button edit-transaction-button"
+                                data-transaction-id="${transaction.id}"
+                                style="
+                                    padding:6px 10px;
+                                    font-size:11px;
+                                    white-space:nowrap;
+                                "
+                            >
+                                Edit
+                            </button>
+
+
+                            <button
+                                type="button"
+                                class="secondary-button danger-action delete-transaction-button"
+                                data-transaction-id="${transaction.id}"
+                                style="
+                                    padding:6px 10px;
+                                    font-size:11px;
+                                    white-space:nowrap;
+                                "
+                            >
+                                Delete
+                            </button>
+
+                        </div>
+
+                    </td>
+
+                </tr>
+
+            `;
+
+        }
+    );
+
+
+    rows += `
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+    `;
+
+
+    return rows;
+
+}
+
+
+/* =========================================================
+   TRANSACTION ACTION LISTENERS
+========================================================= */
+
+function attachTransactionActionListeners() {
+
+    document
+        .querySelectorAll(
+            ".edit-transaction-button"
+        )
+        .forEach(
+            button => {
+
+                button.addEventListener(
+                    "click",
+                    () => {
+
+                        const transaction =
+                            appData.transactions.find(
+                                item =>
+                                    item.id ===
+                                    button.dataset
+                                        .transactionId
+                            );
+
+
+                        if (!transaction) {
+
+                            showToast(
+                                "Transaction could not be found.",
+                                "!"
+                            );
+
+                            return;
+                        }
+
+
+                        const cheque =
+                            appData.cheques.find(
+                                item =>
+                                    item.transactionId ===
+                                    transaction.id
+                            ) || null;
+
+
+                        openTransactionModal(
+                            transaction.customerId,
+                            {
+                                ...transaction,
+                                cheque
+                            }
+                        );
+
+                    }
+                );
+
+            }
+        );
+
+
+    document
+        .querySelectorAll(
+            ".delete-transaction-button"
+        )
+        .forEach(
+            button => {
+
+                button.addEventListener(
+                    "click",
+                    () => {
+
+                        deleteTransaction(
+                            button.dataset
+                                .transactionId
+                        );
+
+                    }
+                );
+
+            }
+        );
+
+}
     if (
         currentView === "customer" &&
-        selectedCustomerId === customerId
+        selectedCustomerId
     ) {
 
         renderCustomerStatement(
-            customerId
+            selectedCustomerId
         );
 
     } else {
@@ -2376,6 +7134,7 @@ function saveTransaction(event) {
         );
     }
 }
+
 
 /* =========================================================
    STATEMENTS
@@ -2475,6 +7234,7 @@ function renderStatements() {
                         .toLowerCase()
                         .trim();
 
+
                 const filtered =
                     customers.filter(
                         customer =>
@@ -2483,10 +7243,12 @@ function renderStatements() {
                                 .includes(query)
                     );
 
+
                 const grid =
                     document.getElementById(
                         "statementCustomerGrid"
                     );
+
 
                 grid.innerHTML =
                     filtered.length
@@ -2496,11 +7258,15 @@ function renderStatements() {
                             "No customer statements match your search."
                         );
 
+
                 setupCustomerCardButtons();
+
             }
         );
 
+
     setupCustomerCardButtons();
+
 }
 
 
@@ -2516,6 +7282,7 @@ function openCustomerStatement(
         customerId;
 
     renderView("customer");
+
 }
 
 
@@ -2701,6 +7468,7 @@ function renderCustomerStatement(
                     </div>
 
                     <div class="balance-box-value">
+
                         ${formatMoney(
                             Math.abs(
                                 Number(
@@ -2708,6 +7476,7 @@ function renderCustomerStatement(
                                 )
                             )
                         )}
+
                     </div>
 
                 </div>
@@ -2720,9 +7489,11 @@ function renderCustomerStatement(
                     </div>
 
                     <div class="balance-box-value">
+
                         ${formatMoney(
                             totalActivity
                         )}
+
                     </div>
 
                 </div>
@@ -2743,9 +7514,11 @@ function renderCustomerStatement(
                                     : ""
                         }"
                     >
+
                         ${formatMoney(
                             Math.abs(balance)
                         )}
+
                     </div>
 
                 </div>
@@ -2807,7 +7580,9 @@ function renderCustomerStatement(
                     [customerId]
                 )
         );
+
 }
+
 
 /* =========================================================
    STATEMENT TABLE
@@ -2838,6 +7613,7 @@ function statementTableHTML(
                     <th>Debit</th>
                     <th>Credit</th>
                     <th>Balance</th>
+                    <th>Actions</th>
 
                 </tr>
 
@@ -2897,6 +7673,10 @@ function statementTableHTML(
                 </strong>
             </td>
 
+            <td>
+                —
+            </td>
+
         </tr>
     `;
 
@@ -2945,10 +7725,6 @@ function statementTableHTML(
                 transaction.type === "credit";
 
 
-            /* -------------------------------------------------
-               RUNNING BALANCE
-            ------------------------------------------------- */
-
             if (isReceivable) {
 
                 runningBalance += amount;
@@ -2972,6 +7748,7 @@ function statementTableHTML(
             } else if (isCredit) {
 
                 runningBalance -= amount;
+
             }
 
 
@@ -3013,6 +7790,7 @@ function statementTableHTML(
             } else if (isCredit) {
 
                 entryLabel = "Credit";
+
             }
 
 
@@ -3114,6 +7892,32 @@ function statementTableHTML(
 
                     </td>
 
+                    <td>
+
+                        <div class="table-actions">
+
+                            <button
+                                type="button"
+                                class="secondary-button edit-transaction-button"
+                                data-transaction-id="${transaction.id}"
+                                style="padding:6px 10px;font-size:11px;"
+                            >
+                                Edit
+                            </button>
+
+                            <button
+                                type="button"
+                                class="secondary-button danger-action delete-transaction-button"
+                                data-transaction-id="${transaction.id}"
+                                style="padding:6px 10px;font-size:11px;"
+                            >
+                                Delete
+                            </button>
+
+                        </div>
+
+                    </td>
+
                 </tr>
             `;
         }
@@ -3127,13 +7931,9 @@ function statementTableHTML(
         </table>
     `;
 
+
     return rows;
 }
-
-/* =========================================================
-   TRANSACTIONS
-========================================================= */
-
 function renderTransactions() {
 
     const transactions =
@@ -3199,12 +7999,13 @@ function renderTransactions() {
                 </option>
 
                 <option value="payment_received">
-    Payments Received
-</option>
+                    Payments Received
+                </option>
 
-<option value="payment_made">
-    Payments Made
-</option>
+                <option value="payment_made">
+                    Payments Made
+                </option>
+
                 <option value="debit">
                     Debit Adjustments
                 </option>
@@ -3399,6 +8200,7 @@ function transactionTableHTML(
                         <th>Type</th>
                         <th>Method</th>
                         <th>Amount</th>
+                        <th>Actions</th>
 
                     </tr>
 
@@ -3523,6 +8325,27 @@ function transactionTableHTML(
 
                                         </td>
 
+                                        <td>
+                                            <div class="table-actions">
+                                                <button
+                                                    type="button"
+                                                    class="secondary-button edit-transaction-button"
+                                                    data-transaction-id="${transaction.id}"
+                                                    style="padding:6px 10px;font-size:11px;white-space:nowrap;"
+                                                >
+                                                    Edit
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    class="secondary-button danger-action delete-transaction-button"
+                                                    data-transaction-id="${transaction.id}"
+                                                    style="padding:6px 10px;font-size:11px;white-space:nowrap;"
+                                                >
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        </td>
+
                                     </tr>
                                 `;
                             }
@@ -3537,6 +8360,8 @@ function transactionTableHTML(
         </div>
     `;
 }
+
+
 /* =========================================================
    TRANSACTION TYPE BADGE
 ========================================================= */
@@ -3564,9 +8389,11 @@ function transactionTypeBadge(type) {
             ["Credit", "badge-success"]
     };
 
+
     const item =
         labels[type] ||
         ["Other", "badge-neutral"];
+
 
     return `
         <span class="badge ${item[1]}">
@@ -3574,6 +8401,1611 @@ function transactionTypeBadge(type) {
         </span>
     `;
 }
+
+
+/* =========================================================
+   CHEQUE REGISTER
+========================================================= */
+
+function renderCheques() {
+
+    const cheques =
+        getFilteredCheques();
+
+
+    const outstanding =
+        appData.cheques.filter(
+            cheque =>
+                ![
+                    "Cleared",
+                    "Returned/Bounced",
+                    "Cancelled"
+                ].includes(
+                    cheque.status
+                )
+        );
+
+
+    const dueSoon =
+        getChequeAlerts();
+
+
+    const cleared =
+        appData.cheques.filter(
+            cheque =>
+                cheque.status ===
+                "Cleared"
+        );
+
+
+    appContent.innerHTML = `
+
+        <div class="page-header">
+
+            <div>
+
+                <h1>Cheque Register</h1>
+
+                <p>
+                    Track cheque numbers, banks, dates and clearance status.
+                </p>
+
+            </div>
+
+        </div>
+
+
+        <div class="cheque-summary">
+
+            ${chequeSummaryCard(
+                "Outstanding",
+                outstanding.length,
+                formatMoney(
+                    outstanding.reduce(
+                        (sum, cheque) =>
+                            sum +
+                            Number(
+                                cheque.amount ||
+                                0
+                            ),
+                        0
+                    )
+                )
+            )}
+
+            ${chequeSummaryCard(
+                "Due Soon",
+                dueSoon.length,
+                formatMoney(
+                    dueSoon.reduce(
+                        (sum, cheque) =>
+                            sum +
+                            Number(
+                                cheque.amount ||
+                                0
+                            ),
+                        0
+                    )
+                )
+            )}
+
+            ${chequeSummaryCard(
+                "Cleared",
+                cleared.length,
+                formatMoney(
+                    cleared.reduce(
+                        (sum, cheque) =>
+                            sum +
+                            Number(
+                                cheque.amount ||
+                                0
+                            ),
+                        0
+                    )
+                )
+            )}
+
+        </div>
+/* =========================================================
+   CHEQUE SUMMARY
+========================================================= */
+
+function chequeSummaryCard(
+    title,
+    count,
+    amount
+) {
+
+    return `
+
+        <div class="stat-card">
+
+            <div class="stat-card-label">
+                ${title}
+            </div>
+
+            <div class="stat-card-value">
+                ${count}
+            </div>
+
+            <div class="stat-card-meta">
+                ${amount}
+            </div>
+
+        </div>
+    `;
+}
+
+
+/* =========================================================
+   FILTERED CHEQUES
+========================================================= */
+
+function getFilteredCheques() {
+
+    let cheques =
+        [...appData.cheques];
+
+
+    if (
+        chequeFilter !==
+        "all"
+    ) {
+
+        cheques =
+            cheques.filter(
+                cheque =>
+                    cheque.status ===
+                    chequeFilter
+            );
+    }
+
+
+    return cheques.sort(
+        (a, b) =>
+            new Date(
+                a.dueDate ||
+                a.date
+            ) -
+            new Date(
+                b.dueDate ||
+                b.date
+            )
+    );
+}
+
+
+/* =========================================================
+   FILTER CHEQUE TABLE
+========================================================= */
+
+function filterChequeTable(event) {
+
+    const query =
+        event.target.value
+            .toLowerCase()
+            .trim();
+
+
+    const filtered =
+        getFilteredCheques()
+            .filter(cheque => {
+
+                const customer =
+                    getCustomer(
+                        cheque.customerId
+                    );
+
+
+                return (
+
+                    (
+                        cheque.chequeNumber ||
+                        ""
+                    )
+                        .toLowerCase()
+                        .includes(query)
+
+                    ||
+
+                    (
+                        cheque.bankName ||
+                        ""
+                    )
+                        .toLowerCase()
+                        .includes(query)
+
+                    ||
+
+                    (
+                        customer?.name ||
+                        ""
+                    )
+                        .toLowerCase()
+                        .includes(query)
+                );
+            });
+
+
+    const card =
+        document.getElementById(
+            "chequeTableCard"
+        );
+
+    if (!card) return;
+
+
+    card.innerHTML =
+        filtered.length
+            ? chequeTableHTML(
+                filtered
+            )
+            : emptyStateHTML(
+                "No Matches",
+                "No cheques match your search."
+            );
+}
+
+
+/* =========================================================
+   CHEQUE TABLE
+========================================================= */
+
+function chequeTableHTML(
+    cheques
+) {
+
+    return `
+
+        <div class="table-wrap">
+
+            <table class="data-table">
+
+                <thead>
+
+                    <tr>
+
+                        <th>Cheque No.</th>
+                        <th>Customer</th>
+                        <th>Bank</th>
+                        <th>Cheque Date</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+
+                    </tr>
+
+                </thead>
+
+                <tbody>
+
+                    ${cheques
+                        .map(
+                            cheque => {
+
+                                const customer =
+                                    getCustomer(
+                                        cheque.customerId
+                                    );
+
+
+                                return `
+
+                                    <tr>
+
+                                        <td>
+                                            <strong>
+                                                ${escapeHTML(
+                                                    cheque.chequeNumber ||
+                                                    "—"
+                                                )}
+                                            </strong>
+                                        </td>
+
+                                        <td>
+                                            ${
+                                                customer
+                                                    ? escapeHTML(
+                                                        customer.name
+                                                    )
+                                                    : "Unknown"
+                                            }
+                                        </td>
+
+                                        <td>
+                                            ${escapeHTML(
+                                                cheque.bankName ||
+                                                "—"
+                                            )}
+                                        </td>
+
+                                        <td>
+                                            ${formatDate(
+                                                cheque.dueDate ||
+                                                cheque.date
+                                            )}
+                                        </td>
+
+                                        <td>
+                                            ${formatMoney(
+                                                cheque.amount
+                                            )}
+                                        </td>
+
+                                        <td>
+                                            ${chequeStatusBadge(
+                                                cheque.status
+                                            )}
+                                        </td>
+
+                                        <td>
+
+                                            <div class="table-actions">
+
+                                                <button
+                                                    type="button"
+                                                    class="secondary-button edit-cheque-button"
+                                                    data-cheque-id="${cheque.id}"
+                                                    style="padding:6px 10px;font-size:11px;white-space:nowrap;"
+                                                >
+                                                    Edit
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    class="secondary-button danger-action delete-cheque-button"
+                                                    data-cheque-id="${cheque.id}"
+                                                    style="padding:6px 10px;font-size:11px;white-space:nowrap;"
+                                                >
+                                                    Delete
+                                                </button>
+
+                                            </div>
+
+                                        </td>
+
+                                    </tr>
+                                `;
+                            }
+                        )
+                        .join("")
+                    }
+
+                </tbody>
+
+            </table>
+
+        </div>
+    `;
+}
+
+
+/* =========================================================
+   CHEQUE STATUS BADGE
+========================================================= */
+
+function chequeStatusBadge(
+    status
+) {
+
+    const badges = {
+
+        Issued:
+            "badge-warning",
+
+        Deposited:
+            "badge-neutral",
+
+        Cleared:
+            "badge-success",
+
+        "Returned/Bounced":
+            "badge-danger",
+
+        Cancelled:
+            "badge-danger"
+    };
+
+
+    return `
+        <span class="badge ${
+            badges[status] ||
+            "badge-neutral"
+        }">
+            ${escapeHTML(
+                status ||
+                "Unknown"
+            )}
+        </span>
+    `;
+}
+    return `
+
+        <div class="alert-card ${
+            alert.days <= 1
+                ? "danger"
+                : "warning"
+        }">
+
+            <div class="alert-icon">
+                🔔
+            </div>
+
+            <div style="flex:1;">
+
+                <div class="alert-title">
+                    ${escapeHTML(
+                        alert.title
+                    )}
+                </div>
+
+                <div class="alert-text">
+
+                    ${
+                        customer
+                            ? escapeHTML(
+                                customer.name
+                            )
+                            : "Unknown customer"
+                    }
+
+                    · Cheque
+                    <strong>
+                        ${escapeHTML(
+                            cheque.chequeNumber
+                        )}
+                    </strong>
+
+                    ·
+
+                    <strong>
+                        ${formatMoney(
+                            cheque.amount
+                        )}
+                    </strong>
+
+                    · Clearance
+                    ${formatDate(
+                        cheque.clearanceDate
+                    )}
+
+                </div>
+
+            </div>
+
+        </div>
+    `;
+}
+
+
+/* =========================================================
+   PRINT STATEMENTS
+========================================================= */
+
+function renderPrintStatements() {
+
+    const customers =
+        appData.customers;
+
+
+    appContent.innerHTML = `
+
+        <div class="page-header">
+
+            <div>
+
+                <h1>Print Statements</h1>
+
+                <p>
+                    Select one, several or all customers.
+                </p>
+
+            </div>
+
+            <div class="page-header-actions">
+
+                <button
+                    class="primary-button"
+                    id="printSelectedButton"
+                >
+                    ⎙ Print Selected
+                </button>
+
+            </div>
+
+        </div>
+
+
+        <div class="card card-padding">
+
+            <div class="print-actions">
+
+                <button
+                    class="secondary-button"
+                    id="selectAllCustomers"
+                >
+                    Select All
+                </button>
+
+                <button
+                    class="secondary-button"
+                    id="clearCustomerSelection"
+                >
+                    Clear
+                </button>
+
+                <span
+                    id="selectedCustomerCount"
+                    class="badge badge-gold"
+                >
+                    0 selected
+                </span>
+
+            </div>
+
+
+            ${
+                customers.length
+                    ? `
+                        <div class="print-customer-list">
+
+                            ${customers
+                                .map(
+                                    customer =>
+                                        `
+                                        <label
+                                            class="print-customer-item"
+                                        >
+
+                                            <input
+                                                type="checkbox"
+                                                class="checkbox print-customer-checkbox"
+                                                value="${customer.id}"
+                                                ${
+                                                    printSelectedCustomers.has(
+                                                        customer.id
+                                                    )
+                                                        ? "checked"
+                                                        : ""
+                                                }
+                                            >
+
+                                            <span>
+
+                                                <strong>
+                                                    ${escapeHTML(
+                                                        customer.name
+                                                    )}
+                                                </strong>
+
+                                                <small
+                                                    style="
+                                                        display:block;
+                                                        margin-top:3px;
+                                                        color:var(--muted);
+                                                    "
+                                                >
+                                                    Balance:
+                                                    ${formatMoney(
+                                                        getCustomerBalance(
+                                                            customer.id
+                                                        )
+                                                    )}
+                                                </small>
+
+                                            </span>
+
+                                        </label>
+                                    `
+                                )
+                                .join("")
+                            }
+
+                        </div>
+                    `
+                    : emptyStateHTML(
+                        "No Customers",
+                        "Add customers before printing statements."
+                    )
+            }
+
+        </div>
+    `;
+
+
+    document
+        .querySelectorAll(
+            ".print-customer-checkbox"
+        )
+        .forEach(
+            checkbox => {
+
+                checkbox.addEventListener(
+                    "change",
+                    event => {
+
+                        if (
+                            event.target.checked
+                        ) {
+
+                            printSelectedCustomers.add(
+                                event.target.value
+                            );
+
+                        } else {
+
+                            printSelectedCustomers.delete(
+                                event.target.value
+                            );
+                        }
+
+
+                        updateSelectedCustomerCount();
+                    }
+                );
+            }
+        );
+
+
+    document
+        .getElementById(
+            "selectAllCustomers"
+        )
+        ?.addEventListener(
+            "click",
+            () => {
+
+                appData.customers.forEach(
+                    customer =>
+                        printSelectedCustomers.add(
+                            customer.id
+                        )
+                );
+
+
+                renderPrintStatements();
+            }
+        );
+
+
+    document
+        .getElementById(
+            "clearCustomerSelection"
+        )
+        ?.addEventListener(
+            "click",
+            () => {
+
+                printSelectedCustomers.clear();
+
+                renderPrintStatements();
+            }
+        );
+
+
+    document
+        .getElementById(
+            "printSelectedButton"
+        )
+        ?.addEventListener(
+            "click",
+            printSelectedStatements
+        );
+
+
+    updateSelectedCustomerCount();
+}
+
+
+/* =========================================================
+   SELECTED CUSTOMER COUNT
+========================================================= */
+
+function updateSelectedCustomerCount() {
+
+    const element =
+        document.getElementById(
+            "selectedCustomerCount"
+        );
+
+
+    if (!element) return;
+
+
+    element.textContent =
+        `${printSelectedCustomers.size} selected`;
+}
+
+
+/* =========================================================
+   PRINT SELECTED STATEMENTS
+========================================================= */
+
+function printSelectedStatements() {
+
+    const selected =
+        appData.customers.filter(
+            customer =>
+                printSelectedCustomers.has(
+                    customer.id
+                )
+        );
+
+
+    if (!selected.length) {
+
+        showToast(
+            "Please select at least one customer.",
+            "!"
+        );
+
+        return;
+    }
+
+
+    const printWindow =
+        window.open(
+            "",
+            "_blank"
+        );
+
+
+    if (!printWindow) {
+
+        showToast(
+            "Please allow pop-ups to print statements.",
+            "!"
+        );
+
+        return;
+    }
+
+
+    printWindow.document.write(
+        buildPrintStatementsHTML(
+            selected
+        )
+    );
+
+
+    printWindow.document.close();
+
+
+    printWindow.focus();
+
+
+    setTimeout(
+        () => {
+
+            printWindow.print();
+
+        },
+        300
+    );
+}
+
+
+/* =========================================================
+   BUILD PRINT STATEMENTS HTML
+========================================================= */
+
+function buildPrintStatementsHTML(
+    customers
+) {
+
+    return `<!DOCTYPE html>
+
+<html>
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <title>
+        Al Jefoon Tents - Customer Statements
+    </title>
+
+    <style>
+
+        * {
+            box-sizing:border-box;
+        }
+
+        body {
+            margin:0;
+            padding:20px;
+            font-family:Arial,Helvetica,sans-serif;
+            color:#111;
+            background:#fff;
+        }
+
+        .statement {
+            page-break-after:always;
+        }
+
+        .statement:last-child {
+            page-break-after:auto;
+        }
+
+        .print-header {
+            display:flex;
+            justify-content:space-between;
+            align-items:flex-start;
+            border-bottom:3px solid #fcc224;
+            padding-bottom:14px;
+            margin-bottom:18px;
+        }
+
+        .company-name {
+            font-size:24px;
+            font-weight:800;
+        }
+
+        .company-subtitle {
+            font-size:14px;
+            margin-top:4px;
+            color:#555;
+        }
+
+        .print-date {
+            text-align:right;
+            font-size:12px;
+            color:#555;
+        }
+
+        .customer-info {
+            margin-bottom:18px;
+        }
+
+        .customer-name {
+            font-size:20px;
+            font-weight:700;
+            margin-bottom:6px;
+        }
+
+        .customer-details {
+            font-size:12px;
+            color:#555;
+            line-height:1.6;
+        }
+
+        table {
+            width:100%;
+            border-collapse:collapse;
+            font-size:11px;
+        }
+
+        th {
+            background:#111;
+            color:#fff;
+            padding:8px;
+            text-align:left;
+        }
+
+        td {
+            border-bottom:1px solid #ddd;
+            padding:7px 8px;
+            vertical-align:top;
+        }
+
+        .amount {
+            text-align:right;
+            white-space:nowrap;
+        }
+
+        .balance {
+            font-weight:700;
+            text-align:right;
+            white-space:nowrap;
+        }
+
+        .summary {
+            margin-top:18px;
+            margin-left:auto;
+            width:280px;
+            border:1px solid #ddd;
+        }
+
+        .summary-row {
+            display:flex;
+            justify-content:space-between;
+            padding:8px 10px;
+            border-bottom:1px solid #ddd;
+            font-size:12px;
+        }
+
+        .summary-row:last-child {
+            border-bottom:0;
+            background:#fcc224;
+            font-weight:800;
+        }
+
+        .footer {
+            margin-top:28px;
+            padding-top:10px;
+            border-top:1px solid #ddd;
+            font-size:10px;
+            color:#777;
+            text-align:center;
+        }
+
+        @media print {
+
+            body {
+                padding:10mm;
+            }
+
+        }
+
+    </style>
+
+</head>
+
+<body>
+
+    ${customers
+        .map(
+            customer =>
+                buildSinglePrintStatement(
+                    customer
+                )
+        )
+        .join("")
+    }
+
+</body>
+
+</html>`;
+}
+        <div
+            class="card"
+            id="chequeTableCard"
+        >
+
+            ${
+                cheques.length
+                    ? chequeTableHTML(
+                        cheques
+                    )
+                    : emptyStateHTML(
+                        "No Cheques",
+                        "Cheque payments will appear here automatically."
+                    )
+            }
+
+        </div>
+    `;
+
+
+    document
+        .getElementById(
+            "chequeSearch"
+        )
+        ?.addEventListener(
+            "input",
+            filterChequeTable
+        );
+
+
+    document
+        .getElementById(
+            "chequeStatusFilter"
+        )
+        ?.addEventListener(
+            "change",
+            event => {
+
+                chequeFilter =
+                    event.target.value;
+
+                renderCheques();
+            }
+        );
+}
+
+
+/* =========================================================
+   CHEQUE SUMMARY
+========================================================= */
+
+function chequeSummaryCard(
+    label,
+    value,
+    small
+) {
+
+    return `
+
+        <div class="card cheque-summary-card">
+
+            <div class="cheque-summary-label">
+                ${escapeHTML(label)}
+            </div>
+
+            <div class="cheque-summary-value">
+                ${escapeHTML(String(value))}
+            </div>
+
+            <div class="stat-small">
+                ${escapeHTML(String(small))}
+            </div>
+
+        </div>
+    `;
+}
+
+
+/* =========================================================
+   FILTERED CHEQUES
+========================================================= */
+
+function getFilteredCheques() {
+
+    let cheques =
+        [...appData.cheques];
+
+
+    if (
+        chequeFilter !==
+        "all"
+    ) {
+
+        cheques =
+            cheques.filter(
+                cheque =>
+                    cheque.status ===
+                    chequeFilter
+            );
+    }
+
+
+    return cheques.sort(
+        (a, b) =>
+            new Date(
+                a.clearanceDate ||
+                a.chequeDate ||
+                a.createdAt
+            ) -
+            new Date(
+                b.clearanceDate ||
+                b.chequeDate ||
+                b.createdAt
+            )
+    );
+}
+
+
+/* =========================================================
+   FILTER CHEQUE TABLE
+========================================================= */
+
+function filterChequeTable(event) {
+
+    const query =
+        event.target.value
+            .toLowerCase()
+            .trim();
+
+
+    const filtered =
+        getFilteredCheques()
+            .filter(cheque => {
+
+                const customer =
+                    getCustomer(
+                        cheque.customerId
+                    );
+
+                return (
+
+                    cheque.chequeNumber
+                        .toLowerCase()
+                        .includes(query)
+
+                    ||
+
+                    (
+                        cheque.bank ||
+                        ""
+                    )
+                        .toLowerCase()
+                        .includes(query)
+
+                    ||
+
+                    (
+                        cheque.drawer ||
+                        ""
+                    )
+                        .toLowerCase()
+                        .includes(query)
+
+                    ||
+
+                    (
+                        customer?.name ||
+                        ""
+                    )
+                        .toLowerCase()
+                        .includes(query)
+                );
+            });
+
+
+    const card =
+        document.getElementById(
+            "chequeTableCard"
+        );
+        /* =========================================================
+   TRANSACTIONS
+========================================================= */
+
+function renderTransactions() {
+
+    const transactions =
+        getFilteredTransactions();
+
+
+    appContent.innerHTML = `
+
+        <div class="page-header">
+
+            <div>
+
+                <h1>Transactions</h1>
+
+                <p>
+                    View and manage all customer account entries.
+                </p>
+
+            </div>
+
+            <div class="page-header-actions">
+
+                <button
+                    class="primary-button"
+                    id="transactionAddButton"
+                >
+                    + Add Transaction
+                </button>
+
+            </div>
+
+        </div>
+
+
+        <div class="card filter-bar">
+
+            <div class="search-box">
+
+                <span class="search-icon">
+                    ⌕
+                </span>
+
+                <input
+                    id="transactionSearch"
+                    type="search"
+                    placeholder="Search customer or description..."
+                >
+
+            </div>
+
+
+            <select
+                class="filter-select"
+                id="transactionTypeFilter"
+            >
+
+                <option value="all">
+                    All Types
+                </option>
+
+                <option value="sale">
+                    Credit Sales
+                </option>
+
+                <option value="payment_received">
+                    Payments Received
+                </option>
+
+                <option value="purchase">
+                    Credit Purchases
+                </option>
+
+                <option value="payment_made">
+                    Payments Made
+                </option>
+
+                <option value="debit">
+                    Debit Adjustments
+                </option>
+
+                <option value="credit">
+                    Credit Adjustments
+                </option>
+
+            </select>
+
+        </div>
+
+
+        <div
+            class="card"
+            id="transactionsTableCard"
+        >
+
+            ${
+                transactions.length
+                    ? transactionTableHTML(
+                        transactions
+                    )
+                    : emptyStateHTML(
+                        "No Transactions",
+                        "No transactions match the current filters."
+                    )
+            }
+
+        </div>
+    `;
+
+
+    document
+        .getElementById(
+            "transactionAddButton"
+        )
+        ?.addEventListener(
+            "click",
+            () => openTransactionModal()
+        );
+
+
+    document
+        .getElementById(
+            "transactionSearch"
+        )
+        ?.addEventListener(
+            "input",
+            filterTransactionTable
+        );
+
+
+    document
+        .getElementById(
+            "transactionTypeFilter"
+        )
+        ?.addEventListener(
+            "change",
+            event => {
+
+                transactionFilter =
+                    event.target.value;
+
+                renderTransactions();
+            }
+        );
+}
+
+
+/* =========================================================
+   FILTERED TRANSACTIONS
+========================================================= */
+
+function getFilteredTransactions() {
+
+    let transactions =
+        [...appData.transactions];
+
+
+    if (
+        transactionFilter !==
+        "all"
+    ) {
+
+        transactions =
+            transactions.filter(
+                transaction =>
+                    transaction.type ===
+                    transactionFilter
+            );
+    }
+
+
+    return transactions.sort(
+        (a, b) =>
+            new Date(b.date) -
+            new Date(a.date)
+    );
+}
+
+
+/* =========================================================
+   FILTER TRANSACTION TABLE
+========================================================= */
+
+function filterTransactionTable(event) {
+
+    const query =
+        event.target.value
+            .toLowerCase()
+            .trim();
+
+
+    const filtered =
+        getFilteredTransactions()
+            .filter(transaction => {
+
+                const customer =
+                    getCustomer(
+                        transaction.customerId
+                    );
+
+                return (
+
+                    (
+                        customer?.name ||
+                        ""
+                    )
+                        .toLowerCase()
+                        .includes(query)
+
+                    ||
+
+                    transaction.description
+                        .toLowerCase()
+                        .includes(query)
+
+                    ||
+
+                    (
+                        transaction.paymentMethod ||
+                        ""
+                    )
+                        .toLowerCase()
+                        .includes(query)
+                );
+            });
+
+
+    const card =
+        document.getElementById(
+            "transactionsTableCard"
+        );
+
+    if (!card) return;
+
+
+    card.innerHTML =
+        filtered.length
+            ? transactionTableHTML(
+                filtered
+            )
+            : emptyStateHTML(
+                "No Matches",
+                "No transactions match your search."
+            );
+}
+function transactionTableHTML(
+    transactions
+) {
+
+    return `
+
+        <div class="table-wrap">
+
+            <table class="data-table">
+
+                <thead>
+
+                    <tr>
+
+                        <th>Date</th>
+                        <th>Customer</th>
+                        <th>Description</th>
+                        <th>Type</th>
+                        <th>Method</th>
+                        <th>Amount</th>
+                        <th>Actions</th>
+
+                    </tr>
+
+                </thead>
+
+                <tbody>
+
+                    ${transactions
+                        .map(
+                            transaction => {
+
+                                const customer =
+                                    getCustomer(
+                                        transaction.customerId
+                                    );
+
+
+                                const isReceivable =
+                                    transaction.type ===
+                                    "sale";
+
+
+                                const isPaymentReceived =
+                                    transaction.type ===
+                                    "payment_received";
+
+
+                                const isPayable =
+                                    transaction.type ===
+                                    "purchase";
+
+
+                                const isPaymentMade =
+                                    transaction.type ===
+                                    "payment_made";
+
+
+                                const isDebit =
+                                    transaction.type ===
+                                    "debit";
+
+
+                                const isCredit =
+                                    transaction.type ===
+                                    "credit";
+
+
+                                const isPositive =
+                                    isReceivable ||
+                                    isPaymentMade ||
+                                    isDebit;
+
+
+                                return `
+
+                                    <tr>
+
+                                        <td>
+                                            ${formatDate(
+                                                transaction.date
+                                            )}
+                                        </td>
+
+                                        <td>
+
+                                            <strong>
+                                                ${
+                                                    customer
+                                                        ? escapeHTML(
+                                                            customer.name
+                                                        )
+                                                        : "Unknown"
+                                                }
+                                            </strong>
+
+                                        </td>
+
+                                        <td>
+                                            ${escapeHTML(
+                                                transaction.description
+                                            )}
+                                        </td>
+
+                                        <td>
+                                            ${transactionTypeBadge(
+                                                transaction.type
+                                            )}
+                                        </td>
+
+                                        <td>
+                                            ${
+                                                transaction.paymentMethod
+                                                    ? `
+                                                        <span class="badge badge-neutral">
+                                                            ${escapeHTML(
+                                                                transaction.paymentMethod
+                                                            )}
+                                                        </span>
+                                                    `
+                                                    : "—"
+                                            }
+                                        </td>
+
+                                        <td>
+
+                                            <span
+                                                class="amount ${
+                                                    isPositive
+                                                        ? "positive"
+                                                        : "negative"
+                                                }"
+                                            >
+                                                ${
+                                                    isPositive
+                                                        ? "+"
+                                                        : "-"
+                                                }
+                                                ${formatMoney(
+                                                    transaction.amount
+                                                )}
+                                            </span>
+
+                                        </td>
+
+                                        <td>
+                                            <div class="table-actions">
+                                                <button
+                                                    type="button"
+                                                    class="secondary-button edit-transaction-button"
+                                                    data-transaction-id="${transaction.id}"
+                                                    style="padding:6px 10px;font-size:11px;white-space:nowrap;"
+                                                >
+                                                    Edit
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    class="secondary-button danger-action delete-transaction-button"
+                                                    data-transaction-id="${transaction.id}"
+                                                    style="padding:6px 10px;font-size:11px;white-space:nowrap;"
+                                                >
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        </td>
+
+                                    </tr>
+                                `;
+                            }
+                        )
+                        .join("")
+                    }
+
+                </tbody>
+
+            </table>
+
+        </div>
+    `;
+}
+
+
+/* =========================================================
+   TRANSACTION TYPE BADGE
+========================================================= */
+
+function transactionTypeBadge(type) {
+
+    const labels = {
+
+        sale:
+            ["Credit Sale", "badge-success"],
+
+        payment_received:
+            ["Payment Received", "badge-success"],
+
+        purchase:
+            ["Credit Purchase", "badge-danger"],
+
+        payment_made:
+            ["Payment Made", "badge-danger"],
+
+        debit:
+            ["Debit", "badge-warning"],
+
+        credit:
+            ["Credit", "badge-success"]
+    };
+
+
+    const item =
+        labels[type] ||
+        ["Other", "badge-neutral"];
+
+
+    return `
+        <span class="badge ${item[1]}">
+            ${item[0]}
+        </span>
+    `;
+}
+
 
 /* =========================================================
    CHEQUE REGISTER
@@ -3804,25 +10236,25 @@ function renderCheques() {
 ========================================================= */
 
 function chequeSummaryCard(
-    label,
-    value,
-    small
+    title,
+    count,
+    amount
 ) {
 
     return `
 
-        <div class="card cheque-summary-card">
+        <div class="stat-card">
 
-            <div class="cheque-summary-label">
-                ${escapeHTML(label)}
+            <div class="stat-card-label">
+                ${title}
             </div>
 
-            <div class="cheque-summary-value">
-                ${escapeHTML(String(value))}
+            <div class="stat-card-value">
+                ${count}
             </div>
 
-            <div class="stat-small">
-                ${escapeHTML(String(small))}
+            <div class="stat-card-meta">
+                ${amount}
             </div>
 
         </div>
@@ -3857,14 +10289,12 @@ function getFilteredCheques() {
     return cheques.sort(
         (a, b) =>
             new Date(
-                a.clearanceDate ||
-                a.chequeDate ||
-                a.createdAt
+                a.dueDate ||
+                a.date
             ) -
             new Date(
-                b.clearanceDate ||
-                b.chequeDate ||
-                b.createdAt
+                b.dueDate ||
+                b.date
             )
     );
 }
@@ -3875,6 +10305,59 @@ function getFilteredCheques() {
 ========================================================= */
 
 function filterChequeTable(event) {
+
+    const query =
+        event.target.value
+            .toLowerCase()
+            .trim();
+
+
+    const filtered =
+        getFilteredCheques()
+            .filter(cheque => {
+
+                const customer =
+                    getCustomer(
+                        cheque.customerId
+                    );
+
+                return (
+
+                    (
+                        cheque.chequeNumber ||
+                        ""
+                    )
+                        .toLowerCase()
+                        .includes(query)
+
+                    ||
+
+                    (
+                        cheque.bankName ||
+                        ""
+                    )
+                        .toLowerCase()
+                        .includes(query)
+
+                    ||
+
+                    (
+                        customer?.name ||
+                        ""
+                    )
+                        .toLowerCase()
+                        .includes(query)
+                );
+            });
+
+
+    const card =
+        document.getElementById(
+            "chequeTableCard"
+        );
+
+    if (!card) return;
+    function filterChequeTable(event) {
 
     const query =
         event.target.value
@@ -3972,6 +10455,7 @@ function chequeTableHTML(
                         <th>Amount</th>
                         <th>Clearance</th>
                         <th>Status</th>
+                        <th>Actions</th>
 
                     </tr>
 
@@ -4048,6 +10532,26 @@ function chequeTableHTML(
                                             ${chequeStatusBadge(
                                                 cheque.status
                                             )}
+                                        </td>
+                                        <td>
+                                            <div class="table-actions">
+                                                <button
+                                                    type="button"
+                                                    class="secondary-button edit-transaction-button"
+                                                    data-transaction-id="${cheque.transactionId || ""}"
+                                                    style="padding:6px 10px;font-size:11px;white-space:nowrap;"
+                                                >
+                                                    Edit
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    class="secondary-button danger-action delete-transaction-button"
+                                                    data-transaction-id="${cheque.transactionId || ""}"
+                                                    style="padding:6px 10px;font-size:11px;white-space:nowrap;"
+                                                >
+                                                    Delete
+                                                </button>
+                                            </div>
                                         </td>
 
                                     </tr>
@@ -4195,6 +10699,465 @@ function getChequeAlerts() {
                         86400000
                     );
 
+                    function chequeTableHTML(
+    cheques
+) {
+
+    return `
+
+        <div class="table-wrap">
+
+            <table class="data-table">
+
+                <thead>
+
+                    <tr>
+
+                        <th>Cheque Date</th>
+                        <th>Customer</th>
+                        <th>Cheque No.</th>
+                        <th>Bank</th>
+                        <th>Amount</th>
+                        <th>Clearance</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+
+                    </tr>
+
+                </thead>
+
+                <tbody>
+
+                    ${cheques
+                        .map(
+                            cheque => {
+
+                                const customer =
+                                    getCustomer(
+                                        cheque.customerId
+                                    );
+
+                                return `
+
+                                    <tr>
+
+                                        <td>
+                                            ${formatDate(
+                                                cheque.chequeDate
+                                            )}
+                                        </td>
+
+                                        <td>
+                                            ${
+                                                customer
+                                                    ? escapeHTML(
+                                                        customer.name
+                                                    )
+                                                    : "Unknown"
+                                            }
+                                        </td>
+
+                                        <td>
+                                            <strong>
+                                                ${escapeHTML(
+                                                    cheque.chequeNumber
+                                                )}
+                                            </strong>
+                                        </td>
+
+                                        <td>
+                                            ${
+                                                cheque.bank
+                                                    ? escapeHTML(
+                                                        cheque.bank
+                                                    )
+                                                    : "—"
+                                            }
+                                        </td>
+
+                                        <td>
+                                            <span class="amount">
+                                                ${formatMoney(
+                                                    cheque.amount
+                                                )}
+                                            </span>
+                                        </td>
+
+                                        <td>
+                                            ${
+                                                cheque.clearanceDate
+                                                    ? formatDate(
+                                                        cheque.clearanceDate
+                                                    )
+                                                    : "—"
+                                            }
+                                        </td>
+
+                                        <td>
+                                            ${chequeStatusBadge(
+                                                cheque.status
+                                            )}
+                                        </td>
+                                        <td>
+                                            <div class="table-actions">
+                                                <button
+                                                    type="button"
+                                                    class="secondary-button edit-transaction-button"
+                                                    data-transaction-id="${cheque.transactionId || ""}"
+                                                    style="padding:6px 10px;font-size:11px;white-space:nowrap;"
+                                                >
+                                                    Edit
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    class="secondary-button danger-action delete-transaction-button"
+                                                    data-transaction-id="${cheque.transactionId || ""}"
+                                                    style="padding:6px 10px;font-size:11px;white-space:nowrap;"
+                                                >
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        </td>
+
+                                    </tr>
+                                `;
+                            }
+                        )
+                        .join("")
+                    }
+
+                </tbody>
+
+            </table>
+
+        </div>
+    `;
+}
+
+
+/* =========================================================
+   CHEQUE STATUS BADGE
+========================================================= */
+
+    return appData.cheques
+        .filter(
+            cheque => {
+
+                if (
+                    [
+                        "Cleared",
+                        "Returned/Bounced",
+                        "Cancelled"
+                    ].includes(
+                        cheque.status
+                    )
+                ) {
+                    return false;
+                }
+
+
+                if (
+                    !cheque.clearanceDate
+                ) {
+                    return false;
+                }
+
+
+                const clearance =
+                    startOfDay(
+                        parseDate(
+                            cheque.clearanceDate
+                        )
+                    );
+
+
+                return (
+                    clearance >= today &&
+                    clearance <= end
+                );
+            }
+        )
+        .map(
+            cheque => {
+
+                const clearance =
+                    startOfDay(
+                        parseDate(
+                            cheque.clearanceDate
+                        )
+                    );
+
+
+                const days =
+                    Math.round(
+                        (
+                            clearance -
+                            today
+                        ) /
+                        86400000
+                    );
+
+
+                return {
+                    ...cheque,
+                    days
+                };
+            }
+        )
+        .sort(
+            (
+                a,
+                b
+            ) =>
+                a.days -
+                b.days
+        );
+}
+
+/* =========================================================
+   CHEQUE NOTIFICATION HELPERS
+========================================================= */
+
+function getChequeNotificationText(
+    cheque
+) {
+
+    const customer =
+        getCustomer(
+            cheque.customerId
+        );
+
+
+    const customerName =
+        customer
+            ? customer.name
+            : "Unknown Customer";
+
+
+    const amount =
+        formatMoney(
+            cheque.amount
+        );
+
+
+    const days =
+        Number(
+            cheque.days
+        );
+
+
+    let timing;
+
+
+    if (days === 0) {
+
+        timing =
+            "is due today.";
+
+    } else if (days === 1) {
+
+        timing =
+            "is due tomorrow.";
+
+    } else if (days > 1) {
+
+        timing =
+            `is due in ${days} days.`;
+
+    } else {
+
+        timing =
+            `was due ${Math.abs(days)} days ago.`;
+    }
+
+
+    return (
+        `Cheque ${cheque.chequeNumber} ` +
+        `for ${amount} from ${customerName} ` +
+        `${timing}`
+    );
+}
+
+
+/* =========================================================
+   SEND CHEQUE NOTIFICATION
+========================================================= */
+
+function sendChequeNotification(
+    cheque
+) {
+
+    if (!cheque) return;
+
+
+    const message =
+        getChequeNotificationText(
+            cheque
+        );
+
+
+    if (
+        "Notification" in window &&
+        Notification.permission ===
+            "granted"
+    ) {
+
+        new Notification(
+            "Cheque Reminder",
+            {
+                body: message,
+                icon: "icon-192.png"
+            }
+        );
+
+    } else {
+
+        showToast(
+            message,
+            "!"
+        );
+    }
+}
+
+
+/* =========================================================
+   CHEQUE ALERT CARD
+========================================================= */
+
+function chequeAlertCard(
+    cheque
+) {
+
+    const customer =
+        getCustomer(
+            cheque.customerId
+        );
+
+
+    const customerName =
+        customer
+            ? customer.name
+            : "Unknown Customer";
+
+
+    return `
+
+        <div class="alert-item">
+
+            <div class="alert-item-content">
+
+                <strong>
+                    ${escapeHTML(
+                        customerName
+                    )}
+                </strong>
+
+                <span>
+                    Cheque
+                    ${escapeHTML(
+                        cheque.chequeNumber
+                    )}
+                    ·
+                    ${formatMoney(
+                        cheque.amount
+                    )}
+                </span>
+
+                <small>
+                    ${
+                        cheque.clearanceDate
+                            ? formatDate(
+                                cheque.clearanceDate
+                            )
+                            : "No clearance date"
+                    }
+                </small>
+
+            </div>
+
+            <button
+                type="button"
+                class="secondary-button"
+                onclick="sendChequeNotification(
+                    appData.cheques.find(
+                        item =>
+                            item.id ===
+                            '${escapeAttribute(
+                                cheque.id
+                            )}'
+                    )
+                )"
+            >
+                Remind
+            </button>
+
+        </div>
+    `;
+}
+
+
+/* =========================================================
+   CHEQUE ALERTS HTML
+========================================================= */
+
+function chequeAlertsHTML(
+    alerts
+) {
+
+    if (
+        !alerts ||
+        !alerts.length
+    ) {
+
+        return emptyStateHTML(
+            "No Upcoming Cheques",
+            "There are no cheque clearance reminders."
+        );
+    }
+
+
+    return `
+
+        <div class="alerts-list">
+
+            ${alerts
+                .map(
+                    cheque =>
+                        chequeAlertCard(
+                            cheque
+                        )
+                )
+                .join("")
+            }
+
+        </div>
+    `;
+}
+
+                    }
+                );
+            }
+        )
+        .map(
+            cheque => {
+
+                const clearance =
+                    startOfDay(
+                        parseDate(
+                            cheque.clearanceDate
+                        )
+                    );
+
+
+                const days =
+                    Math.round(
+                        (
+                            clearance -
+                            today
+                        ) /
+                        86400000
+                    );
+
 
                 const customer =
                     getCustomer(
@@ -4273,6 +11236,7 @@ function alertHTML(
                     }
 
                     · Cheque
+
                     <strong>
                         ${escapeHTML(
                             cheque.chequeNumber
@@ -4284,6 +11248,8 @@ function alertHTML(
                     <strong>
                         ${formatMoney(
                             cheque.amount
+                        )}
+                    </strong>
                         )}
                     </strong>
 
@@ -4324,6 +11290,7 @@ function renderPrintStatements() {
                 </p>
 
             </div>
+
 
             <div class="page-header-actions">
 
@@ -4423,9 +11390,8 @@ function renderPrintStatements() {
                                         </label>
                                         `
                                 )
-                                .join("")
-                            }
-
+                                .join("")}
+                                                            }
                         </div>
                     `
                     : emptyStateHTML(
@@ -4562,7 +11528,6 @@ function updatePrintCount() {
     element.textContent =
         `${printSelectedCustomers.size} selected`;
 }
-
 
 /* =========================================================
    PRINT STATEMENTS
@@ -4843,8 +11808,7 @@ function printStatements(
             ${pages}
 
             <script>
-
-                window.onload = function() {
+                               window.onload = function() {
 
                     setTimeout(
                         function() {
@@ -4984,7 +11948,7 @@ function printableStatementHTML(
                                 transaction.notes
                                     ? `
                                         <br>
-                                        <span
+                                                                                <span
                                             style="color:#777;"
                                         >
                                             ${escapeHTML(
@@ -5124,11 +12088,10 @@ function printableStatementHTML(
                     <div class="summary-value">
                         ${formatDate(
                             todayISO()
-                        )}
+                                               )}
                     </div>
 
                 </div>
-
             </div>
 
 
@@ -5172,10 +12135,8 @@ function printableStatementHTML(
 
 
             <div class="footer">
-
                 Generated by
                 Al Jefoon Tents Customer Statements
-
             </div>
 
         </section>
@@ -5188,7 +12149,6 @@ function printableStatementHTML(
 ========================================================= */
 
 function renderReports() {
-
     const customers =
         appData.customers;
 
@@ -5197,7 +12157,6 @@ function renderReports() {
         customers
             .map(
                 customer => {
-
                     const transactions =
                         getCustomerTransactions(
                             customer.id
@@ -5264,7 +12223,7 @@ function renderReports() {
                             )
                             .reduce(
                                 (sum, t) =>
-                                    sum +
+                                                                    sum +
                                     Number(
                                         t.amount || 0
                                     ),
@@ -5279,17 +12238,11 @@ function renderReports() {
 
 
                     return {
-
                         customer,
-
                         creditSales,
-
                         paymentsReceived,
-
                         creditPurchases,
-
                         paymentsMade,
-
                         balance
                     };
                 }
@@ -5352,13 +12305,11 @@ function renderReports() {
         <div class="page-header">
 
             <div>
-
                 <h1>Reports</h1>
 
                 <p>
                     Customer account summary and outstanding balances.
                 </p>
-
             </div>
 
             <div class="page-header-actions">
@@ -5403,7 +12354,6 @@ function renderReports() {
                 "↑",
                 "Total credit sales"
             )}
-
             ${statCard(
                 "Credit Purchases",
                 formatMoney(
@@ -5543,8 +12493,146 @@ function renderReports() {
                                         )
                                         .join("")
                                     }
+                                                ${statCard(
+                "Credit Purchases",
+                formatMoney(
+                    totalPurchases
+                ),
+                "▤",
+                "Total credit purchases"
+            )}
 
-                                </tbody>
+        </div>
+
+
+        <div class="card">
+
+            <div class="card-header">
+
+                <div>
+
+                    <div class="card-title">
+                        Customer Account Summary
+                    </div>
+
+                    <div class="card-subtitle">
+                        Opening balances plus transaction activity
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            ${
+                rows.length
+                    ? `
+                        <div class="table-wrap">
+
+                            <table
+                                class="data-table"
+                                id="reportTable"
+                            >
+
+                                <thead>
+
+                                    <tr>
+
+                                        <th>Customer</th>
+                                        <th>Opening</th>
+                                        <th>Credit Sales</th>
+                                        <th>Payments Received</th>
+                                        <th>Credit Purchases</th>
+                                        <th>Payments Made</th>
+                                        <th>Balance</th>
+
+                                    </tr>
+
+                                </thead>
+
+                                <tbody>
+
+                                    ${rows
+                                        .map(
+                                            row =>
+                                                `
+                                                <tr>
+
+                                                    <td>
+                                                        <strong>
+                                                            ${escapeHTML(
+                                                                row.customer.name
+                                                            )}
+                                                        </strong>
+                                                    </td>
+
+                                                    <td>
+                                                        ${formatMoney(
+                                                            row.customer.openingBalance ||
+                                                            0
+                                                        )}
+                                                    </td>
+
+                                                    <td>
+                                                        ${formatMoney(
+                                                            row.creditSales
+                                                        )}
+                                                    </td>
+
+                                                    <td>
+                                                        ${formatMoney(
+                                                            row.paymentsReceived
+                                                        )}
+                                                    </td>
+
+                                                    <td>
+                                                        ${formatMoney(
+                                                            row.creditPurchases
+                                                        )}
+                                                    </td>
+
+                                                    <td>
+                                                        ${formatMoney(
+                                                            row.paymentsMade
+                                                        )}
+                                                    </td>
+
+                                                    <td>
+
+                                                        <span
+                                                            class="amount ${
+                                                                row.balance > 0
+                                                                    ? "positive"
+                                                                    : row.balance < 0
+                                                                        ? "negative"
+                                                                        : "neutral"
+                                                            }"
+                                                        >
+
+                                                            ${
+                                                                row.balance > 0
+                                                                    ? "RECEIVABLE "
+                                                                    : row.balance < 0
+                                                                        ? "PAYABLE "
+                                                                        : "SETTLED "
+                                                            }
+
+                                                            ${formatMoney(
+                                                                Math.abs(
+                                                                    row.balance
+                                                                )
+                                                            )}
+
+                                                        </span>
+
+                                                    </td>
+
+                                                </tr>
+                                                `
+                                        )
+                                        .join("")
+                                    }
+                                                                    </tbody>
 
                             </table>
 
@@ -5569,6 +12657,8 @@ function renderReports() {
             printReport
         );
 }
+
+
 /* =========================================================
    PRINT REPORT
 ========================================================= */
@@ -5680,12 +12770,10 @@ function printReport() {
 
                     setTimeout(
                         function(){
-                            window.print();
-                        },
-                        300
-                    );
 
+                            window.print();
                 };
+
 
             <\/script>
 
@@ -5824,7 +12912,7 @@ function renderBackup() {
 
                 <button
                     class="secondary-button"
-                    id="googleSheetsSetup"
+                                        id="googleSheetsSetup"
                 >
                     Google Sheets Setup
                 </button>
@@ -5908,6 +12996,7 @@ function renderBackup() {
                 showToast(
                     "Google Sheets connection will be configured in the next step."
                 );
+
             }
         );
 }
@@ -5964,6 +13053,7 @@ function miniInfo(
 ========================================================= */
 
 function downloadBackup() {
+   function downloadBackup() {
 
     const backup = {
 
@@ -6044,13 +13134,11 @@ function restoreBackup(event) {
     const file =
         event.target.files?.[0];
 
-
     if (!file) return;
 
 
     const reader =
         new FileReader();
-
 
     reader.onload =
         function() {
@@ -6061,7 +13149,6 @@ function restoreBackup(event) {
                     JSON.parse(
                         reader.result
                     );
-
 
                 const restored =
                     backup.data ||
@@ -6140,6 +13227,7 @@ function restoreBackup(event) {
                     "!"
                 );
             }
+
 
             event.target.value = "";
         };
@@ -6666,7 +13754,6 @@ function sendChequeNotifications(
                 new Notification(
                     "Al Jefoon Tents — Cheque Alert",
                     {
-
                         body:
                             `${alert.title}: ` +
                             `${alert.cheque.chequeNumber} — ` +
