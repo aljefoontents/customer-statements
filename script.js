@@ -2114,13 +2114,16 @@ function updatePaymentVisibility() {
 
     if (!paymentDetails) return;
 
+    const isPayment =
+        type === "payment_received" ||
+        type === "payment_made";
+
     paymentDetails.classList.toggle(
         "hidden",
-        type !== "payment"
+        !isPayment
     );
 
-
-    if (type !== "payment") {
+    if (!isPayment) {
 
         const chequeDetails =
             document.getElementById(
@@ -2132,8 +2135,6 @@ function updatePaymentVisibility() {
         );
     }
 }
-
-
 /* =========================================================
    CHEQUE VISIBILITY
 ========================================================= */
