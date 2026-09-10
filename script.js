@@ -2053,7 +2053,7 @@ function transactionTypeButton(
         <button
             type="button"
             class="transaction-type ${
-                type === "purchase"
+                type === "sale"
                     ? "selected"
                     : ""
             }"
@@ -2075,7 +2075,6 @@ function transactionTypeButton(
         </button>
     `;
 }
-
 
 /* =========================================================
    SETUP TRANSACTION FORM
